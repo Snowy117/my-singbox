@@ -9,8 +9,21 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $settings = Import-PowerShellDataFile (Join-Path $root 'settings.psd1')
 $versions = Import-PowerShellDataFile (Join-Path $root 'versions.psd1')
 $runtime = Get-Content (Join-Path $root 'local\runtime.json') -Raw | ConvertFrom-Json
-$config = Invoke-RestMethod -Uri $settings.TemplateUrl
 $nodes = Get-Content -LiteralPath $NodesPath -Raw | ConvertFrom-Json
+
+function Invoke-RestMethodWithRetry([string]$Uri) {
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            return Invoke-RestMethod -Uri $Uri
+        } catch {
+            if ($attempt -eq 3) { throw }
+            Write-Warning "Request attempt $attempt failed; retrying in 3 seconds."
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
+$config = Invoke-RestMethodWithRetry $settings.TemplateUrl
 
 function Read-DomainList([string]$Path) {
     $exact = [Collections.Generic.List[string]]::new()
