@@ -140,11 +140,11 @@ $dnsServers = @(
     },
     [pscustomobject]@{
         type = 'https'; tag = 'Global-DNS-Recipes'; server = 'v.recipes'; server_port = 443
-        path = '/dns-query'; detour = $directTag; domain_resolver = $settings.DirectDnsServer
+        path = '/dns-query'; domain_resolver = $settings.DirectDnsServer
     },
     [pscustomobject]@{
         type = 'https'; tag = 'Global-DNS-Cloudflare-Gateway'; server = 'iloveyou.cloudflare-gateway.com'; server_port = 443
-        path = '/dns-query'; detour = $directTag; domain_resolver = $settings.DirectDnsServer
+        path = '/dns-query'; domain_resolver = $settings.DirectDnsServer
     },
     [pscustomobject]@{
         type = 'https'; tag = 'Global-DNS-Google'; server = 'dns.google'; server_port = 443
@@ -164,7 +164,7 @@ if (-not ($config.route.rule_set.tag -contains 'FakeIP-Filter')) {
         tag = 'FakeIP-Filter'
         type = 'remote'
         format = 'binary'
-        url = 'https://raw.githubusercontent.com/Lanlan13-14/Rules/refs/heads/main/rules/Domain/fakeip-filter.mrs'
+        url = 'https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset-compatible/fakeip-filter.srs'
         download_detour = $directTag
     }
 }
