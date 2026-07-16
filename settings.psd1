@@ -1,5 +1,5 @@
 @{
-    MixedListen = '0.0.0.0'
+    MixedListenAddresses = @('0.0.0.0', '::')
     MixedPort = 30890
     ClashApiEnabled = $true
     ClashApiListen = '127.0.0.1'
@@ -8,11 +8,16 @@
     NativeApiListen = '127.0.0.1'
     NativeApiPort = 40091
 
-    DnsListen = '0.0.0.0'
+    DnsListenAddresses = @('0.0.0.0', '::')
     DnsListenPort = 53
     DnsReuseAddr = $true
     DnsFirewallRemoteAddress = 'LocalSubnet'
     DnsFirewallInterfaceAlias = 'vEthernet (Network Bridge)'
+
+    NativeApiAllowedOrigins = @(
+        'http://127.0.0.1:40090',
+        'http://localhost:40090'
+    )
 
     TunInterface = 'Meta'
     TunMtu = 1480

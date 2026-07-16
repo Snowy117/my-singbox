@@ -113,10 +113,19 @@ $config.outbounds = @([pscustomobject]@{
     interrupt_exist_connections = $true
 }) + @($config.outbounds)
 
-$mixed = $config.inbounds | Where-Object type -eq 'mixed' | Select-Object -First 1
-Set-JsonProperty $mixed 'listen' $settings.MixedListen
-Set-JsonProperty $mixed 'listen_port' $settings.MixedPort
-Set-JsonProperty $mixed 'users' @($runtime.mixed_users)
+$mixedTemplate = $config.inbounds | Where-Object type -eq 'mixed' | Select-Object -First 1
+if (-not $mixedTemplate) { throw 'The template does not contain a mixed inbound.' }
+$config.inbounds = @($config.inbounds | Where-Object type -ne 'mixed')
+$mixedInbounds = for ($index = 0; $index -lt $settings.MixedListenAddresses.Count; $index++) {
+    $family = if ($index -eq 0) { 'v4' } else { 'v6' }
+    $mixed = $mixedTemplate | ConvertTo-Json -Depth 100 | ConvertFrom-Json
+    Set-JsonProperty $mixed 'tag' "mixed-in-$family"
+    Set-JsonProperty $mixed 'listen' $settings.MixedListenAddresses[$index]
+    Set-JsonProperty $mixed 'listen_port' $settings.MixedPort
+    Set-JsonProperty $mixed 'users' @($runtime.mixed_users)
+    $mixed
+}
+$config.inbounds += @($mixedInbounds)
 $tun = $config.inbounds | Where-Object type -eq 'tun' | Select-Object -First 1
 Set-JsonProperty $tun 'interface_name' $settings.TunInterface
 Set-JsonProperty $tun 'mtu' $settings.TunMtu
@@ -130,13 +139,20 @@ Set-JsonProperty $tun 'route_address' @($settings.TunRouteAddresses)
 Set-JsonProperty $tun 'route_exclude_address' @($settings.TunRouteExcludeAddresses)
 if ($tun.PSObject.Properties['platform']) { $tun.PSObject.Properties.Remove('platform') }
 
-$config.inbounds = @($config.inbounds | Where-Object tag -ne 'dns-in') + @([pscustomobject]@{
-    type = 'direct'
-    tag = 'dns-in'
-    listen = $settings.DnsListen
-    listen_port = $settings.DnsListenPort
-    reuse_addr = $settings.DnsReuseAddr
-})
+$config.inbounds = @($config.inbounds | Where-Object { $_.tag -notlike 'dns-in*' })
+$dnsInboundTags = [Collections.Generic.List[string]]::new()
+for ($index = 0; $index -lt $settings.DnsListenAddresses.Count; $index++) {
+    $family = if ($index -eq 0) { 'v4' } else { 'v6' }
+    $tag = "dns-in-$family"
+    $dnsInboundTags.Add($tag)
+    $config.inbounds += [pscustomobject]@{
+        type = 'direct'
+        tag = $tag
+        listen = $settings.DnsListenAddresses[$index]
+        listen_port = $settings.DnsListenPort
+        reuse_addr = $settings.DnsReuseAddr
+    }
+}
 
 if (($settings.ClashApiEnabled -or $settings.NativeApiEnabled) -and
     ([string]::IsNullOrWhiteSpace($runtime.clash_secret) -or $runtime.clash_secret -eq 'CHANGE_ME')) {
@@ -170,10 +186,7 @@ if ($settings.NativeApiEnabled) {
         listen = $settings.NativeApiListen
         listen_port = $settings.NativeApiPort
         secret = $runtime.clash_secret
-        access_control_allow_origin = @(
-            "http://$($settings.NativeApiListen):$($settings.NativeApiPort)",
-            "http://localhost:$($settings.NativeApiPort)"
-        )
+        access_control_allow_origin = @($settings.NativeApiAllowedOrigins)
         access_control_allow_private_network = $false
         dashboard = $false
     }
@@ -345,7 +358,7 @@ Set-JsonProperty $config.route 'default_domain_resolver' ([pscustomobject]@{
 })
 $priorityRules = @(@(
     [pscustomobject]@{ action = 'sniff'; inbound = 'tun-in' },
-    [pscustomobject]@{ action = 'hijack-dns'; inbound = 'dns-in' },
+    [pscustomobject]@{ action = 'hijack-dns'; inbound = @($dnsInboundTags) },
     [pscustomobject]@{ action = 'hijack-dns'; protocol = 'dns' },
     (New-RouteRule $directTag $manualDirect),
     (New-RouteRule $proxyTag $manualProxy),

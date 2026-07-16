@@ -250,6 +250,6 @@ Write-Host "Zashboard: http://$($settings.ClashApiListen):$($settings.ClashApiPo
 if ($settings.NativeApiEnabled) {
     Write-Host "sing-box native API (gRPC/gRPC-Web): http://$($settings.NativeApiListen):$($settings.NativeApiPort)/"
 }
-Write-Host "DNS for local virtual machines: $($settings.DnsListen):$($settings.DnsListenPort) (TCP/UDP)"
+Write-Host "DNS for local virtual machines: $($settings.DnsListenAddresses -join ', '):$($settings.DnsListenPort) (TCP/UDP)"
 Write-Host "Sub-Store: http://$($settings.SubStoreListen):$($settings.SubStoreFrontendPort)/"
 

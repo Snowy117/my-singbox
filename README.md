@@ -31,11 +31,11 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1
 
 - Zashboard / sing-box Clash API：`http://127.0.0.1:40090/ui/`
 - Clash API 状态检查：`GET http://127.0.0.1:40090/version`，使用 `local/runtime.json` 中的 `clash_secret` 作为 Bearer token。
-- sing-box 原生 gRPC/gRPC-Web API：`127.0.0.1:40091`，使用同一个 Bearer token。`/daemon.StartedService/GetVersion` 是 gRPC 方法，不能用浏览器普通 GET 请求测试。
+- sing-box 原生 gRPC/gRPC-Web API：`127.0.0.1:40091`，使用同一个 Bearer token。允许来自 `http://127.0.0.1:40090` 和 `http://localhost:40090` 面板的 CORS 请求。`/daemon.StartedService/GetVersion` 是 gRPC 方法，不能用浏览器普通 GET 请求测试。
 - Sub-Store 前端：`http://127.0.0.1:40007/`
 - Sub-Store 后端：`http://127.0.0.1:40008/`（仅脚本和前端代理访问）
-- 混合代理：`0.0.0.0:30890`，认证沿用旧配置。
-- DNS：`0.0.0.0:53`，同时监听 UDP 和 TCP；Windows 防火墙只允许 `LocalSubnet` 访问。DNS inbound 默认开启 `reuse_addr`，允许与 Hyper-V/ICS 的 `SharedAccess` UDP 53 共存。
+- 混合代理：分别监听 `0.0.0.0:30890` 和 `[::]:30890`，认证沿用旧配置。
+- DNS：分别监听 `0.0.0.0:53` 和 `[::]:53` 的 UDP/TCP；Windows 防火墙只允许 `LocalSubnet` 访问。DNS inbound 默认开启 `reuse_addr`，允许与 Hyper-V/ICS 的 `SharedAccess` UDP 53 共存。
 - TUN 网卡固定为 `Meta`；服务启动后会对 `Meta` 和 `vEthernet (Network Bridge)` 显式开启 IPv4、IPv6 forwarding。
 
 修改手工域名后，或需要更新订阅时，以管理员身份执行：
