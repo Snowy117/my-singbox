@@ -159,9 +159,9 @@ $hosts = Get-Content (Join-Path $root 'local\dns-hosts.json') -Raw | ConvertFrom
 $hostsDns = [pscustomobject]@{ type = 'hosts'; tag = 'Local-Hosts'; predefined = $hosts }
 $config.dns.servers = @($hostsDns) + $dnsServers
 
-if (-not ($config.route.rule_set.tag -contains 'FakeIP-Filter')) {
+if (-not ($config.route.rule_set.tag -contains 'FakeIP-Filter-SRS')) {
     $config.route.rule_set += [pscustomobject]@{
-        tag = 'FakeIP-Filter'
+        tag = 'FakeIP-Filter-SRS'
         type = 'remote'
         format = 'binary'
         url = 'https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset-compatible/fakeip-filter.srs'
@@ -187,7 +187,7 @@ $config.dns.rules = @(@(
         strategy = $settings.DnsStrategy
     },
     [pscustomobject]@{
-        action = 'route'; rule_set = @('FakeIP-Filter'); server = $settings.DirectDnsServer
+        action = 'route'; rule_set = @('FakeIP-Filter-SRS'); server = $settings.DirectDnsServer
         strategy = $settings.DnsStrategy; client_subnet = $settings.DnsClientSubnet
     },
     [pscustomobject]@{
