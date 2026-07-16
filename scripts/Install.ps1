@@ -137,6 +137,6 @@ Register-WinSW $singWrapper $singInstalled
 Start-WinSW $singWrapper
 
 Write-Host 'Installation complete.'
-Write-Host "Zashboard: http://$($settings.SingBoxApiListen):$($settings.SingBoxApiPort)/ui/"
+Write-Host "Zashboard: http://$($settings.ClashApiListen):$($settings.ClashApiPort)/ui/"
 Write-Host "Sub-Store: http://$($settings.SubStoreListen):$($settings.SubStoreFrontendPort)/"
 

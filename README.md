@@ -30,6 +30,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1
 ## 日常使用
 
 - Zashboard / sing-box Clash API：`http://127.0.0.1:40090/ui/`
+- Clash API 状态检查：`GET http://127.0.0.1:40090/version`，使用 `local/runtime.json` 中的 `clash_secret` 作为 Bearer token。
 - Sub-Store 前端：`http://127.0.0.1:40007/`
 - Sub-Store 后端：`http://127.0.0.1:40008/`（仅脚本和前端代理访问）
 - 混合代理：`0.0.0.0:30890`，认证沿用旧配置。
@@ -49,7 +50,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-Config.ps1
 
 `pku.edu.cn`、`openjudge.cn` 和 `qmazon.local` 默认使用系统分配的 DNS（sing-box `type: dhcp`，等价于原 Mihomo 的 `system://`）。相关域名和 `10.0.0.0/8`、`162.105.0.0/16`、`115.27.0.0/16` 进入 `🎓 北京大学` 选择器，可在 Zashboard 中选择直连或 PKU 私有节点。
 
-DNS 尽量复刻原 Mihomo 配置：保留两组 114 bootstrap、阿里/腾讯/360 DoT、三组通用 DoH、系统 DNS、hosts 和 Fake-IP。默认查询策略为 `prefer_ipv6`，`edu.cn`、`sukaka.ai6.me`、`luogu.com.cn` 保留原配置的 `prefer_ipv4` 特例；Fake-IP 地址段为 `198.18.0.0/15` 与 `fd18:1111:1111::/64`。hosts、系统 DNS、私有域名和 IPv4 特例先返回真实地址，其他 A/AAAA 查询返回 Fake-IP；非地址记录再按国内/国外规则选择上游。`settings.psd1` 的 `DirectDnsServer`/`RemoteDnsServer` 决定当前主用服务器；其他服务器作为可手工切换的备用项。sing-box 1.13 不支持 Mihomo 式 DNS fallback/balancer，因此不能在单条规则中自动按顺序切换多个 DNS。
+DNS 尽量复刻原 Mihomo 配置：保留两组 114 bootstrap、阿里/腾讯/360 DoT、三组通用 DoH、系统 DNS、本地预定义域名和 Fake-IP。默认查询策略为 `prefer_ipv6`，`edu.cn`、`sukaka.ai6.me`、`luogu.com.cn` 保留原配置的 `prefer_ipv4` 特例；Fake-IP 地址段为 `198.18.0.0/15` 与 `fd18:1111:1111::/64`。`local/dns-hosts.json` 中每个域名的根域及所有层级子域都会返回同一组预定义 A/AAAA 地址；这些规则、系统 DNS、私有域名和 IPv4 特例优先于 Fake-IP。其他 A/AAAA 查询返回 Fake-IP；非地址记录再按国内/国外规则选择上游。`settings.psd1` 的 `DirectDnsServer`/`RemoteDnsServer` 决定当前主用服务器；其他服务器作为可手工切换的备用项。sing-box 1.13 不支持 Mihomo 式 DNS fallback/balancer，因此不能在单条规则中自动按顺序切换多个 DNS。
+
+端口 `40090` 提供的是 sing-box 1.13.14 的 Clash REST API，供 Zashboard 使用。真正的 sing-box gRPC/gRPC-Web API 通过 `services` 中的 `type: api` 配置，但该功能从 sing-box 1.14.0 才提供，而 1.14 当前仍是 alpha 版本。`/daemon.StartedService/GetVersion` 不是 1.13.14 Clash API 的路由，因此返回 404 是预期行为；稳定版的版本检查应请求 `/version`。
 
 修改 `settings.psd1` 的 DNS 标签、Fake-IP 段或 `EducationDomains`/`EducationCidrs` 后运行更新脚本即可。修改 Sub-Store 端口后需重新运行 `Install.ps1`，安装器会同步 WinSW XML。
 

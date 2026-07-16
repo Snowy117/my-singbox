@@ -113,15 +113,15 @@ Set-JsonProperty $tun 'mtu' $settings.TunMtu
 Set-JsonProperty $tun 'stack' 'mixed'
 if ($tun.PSObject.Properties['platform']) { $tun.PSObject.Properties.Remove('platform') }
 
-if ($settings.SingBoxApiEnabled) {
-    Set-JsonProperty $config.experimental.clash_api 'external_controller' "$($settings.SingBoxApiListen):$($settings.SingBoxApiPort)"
+if ($settings.ClashApiEnabled) {
+    Set-JsonProperty $config.experimental.clash_api 'external_controller' "$($settings.ClashApiListen):$($settings.ClashApiPort)"
     Set-JsonProperty $config.experimental.clash_api 'external_ui' (Join-Path $root 'ui')
     Set-JsonProperty $config.experimental.clash_api 'external_ui_download_url' "https://github.com/Zephyruso/zashboard/releases/download/v$($versions.Zashboard)/dist.zip"
     Set-JsonProperty $config.experimental.clash_api 'secret' $runtime.clash_secret
     Set-JsonProperty $config.experimental.clash_api 'default_mode' 'rule'
     Set-JsonProperty $config.experimental.clash_api 'access_control_allow_origin' @(
-        "http://$($settings.SingBoxApiListen):$($settings.SingBoxApiPort)",
-        "http://localhost:$($settings.SingBoxApiPort)"
+        "http://$($settings.ClashApiListen):$($settings.ClashApiPort)",
+        "http://localhost:$($settings.ClashApiPort)"
     )
     Set-JsonProperty $config.experimental.clash_api 'access_control_allow_private_network' $false
 } else {
@@ -169,8 +169,34 @@ $dnsServers = @(
     }
 )
 $hosts = Get-Content (Join-Path $root 'local\dns-hosts.json') -Raw | ConvertFrom-Json -AsHashtable
-$hostsDns = [pscustomobject]@{ type = 'hosts'; tag = 'Local-Hosts'; predefined = $hosts }
-$config.dns.servers = @($hostsDns) + $dnsServers
+$config.dns.servers = $dnsServers
+
+$hostsDnsRules = [Collections.Generic.List[object]]::new()
+foreach ($entry in $hosts.GetEnumerator()) {
+    $domain = $entry.Key.TrimEnd('.').ToLowerInvariant()
+    $addressesByType = [ordered]@{ A = @(); AAAA = @() }
+    foreach ($address in @($entry.Value)) {
+        $parsedAddress = [Net.IPAddress]::Parse($address)
+        $recordType = if ($parsedAddress.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) { 'A' } else { 'AAAA' }
+        $addressesByType[$recordType] += $parsedAddress.ToString()
+    }
+    foreach ($recordType in $addressesByType.Keys) {
+        $addresses = @($addressesByType[$recordType])
+        if (-not $addresses.Count) { continue }
+        $hostsDnsRules.Add([pscustomobject]@{
+            action = 'predefined'
+            domain = @($domain)
+            query_type = @($recordType)
+            answer = @($addresses | ForEach-Object { "$domain. IN $recordType $_" })
+        })
+        $hostsDnsRules.Add([pscustomobject]@{
+            action = 'predefined'
+            domain_suffix = @($domain)
+            query_type = @($recordType)
+            answer = @($addresses | ForEach-Object { "*.$domain. IN $recordType $_" })
+        })
+    }
+}
 
 if (-not ($config.route.rule_set.tag -contains 'FakeIP-Filter-SRS')) {
     $config.route.rule_set += [pscustomobject]@{
@@ -182,13 +208,11 @@ if (-not ($config.route.rule_set.tag -contains 'FakeIP-Filter-SRS')) {
     }
 }
 
-$hostsDnsRule = [pscustomobject]@{ action = 'route'; domain = @($hosts.Keys); server = 'Local-Hosts' }
 $educationDnsRule = [pscustomobject]@{
     action = 'route'; domain_suffix = @($settings.EducationDomains); server = 'System-DNS'
     strategy = $settings.DnsStrategy
 }
-$config.dns.rules = @(@(
-    $hostsDnsRule,
+$config.dns.rules = @($hostsDnsRules) + @(@(
     $educationDnsRule,
     [pscustomobject]@{
         action = 'route'; domain_suffix = @($settings.Ipv4PreferredDomains)

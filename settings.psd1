@@ -1,9 +1,9 @@
 @{
     MixedListen = '0.0.0.0'
     MixedPort = 30890
-    SingBoxApiEnabled = $true
-    SingBoxApiListen = '127.0.0.1'
-    SingBoxApiPort = 40090
+    ClashApiEnabled = $true
+    ClashApiListen = '127.0.0.1'
+    ClashApiPort = 40090
     TunInterface = 'Meta'
     TunMtu = 1480
 
