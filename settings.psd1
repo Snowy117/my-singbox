@@ -10,6 +10,7 @@
 
     DnsListen = '0.0.0.0'
     DnsListenPort = 53
+    DnsReuseAddr = $true
     DnsFirewallRemoteAddress = 'LocalSubnet'
     DnsFirewallInterfaceAlias = 'vEthernet (Network Bridge)'
 

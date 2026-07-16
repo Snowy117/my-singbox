@@ -72,6 +72,36 @@ function Assert-PortAvailable([int]$Port) {
         throw "Port $Port is already in use by process ID(s): $($owners -join ', ')."
     }
 }
+function Assert-DnsPortAvailable([int]$Port) {
+    $tcpOwners = @(
+        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess
+    ) | Sort-Object -Unique
+    if ($tcpOwners.Count) {
+        throw "TCP port $Port is already in use by process ID(s): $($tcpOwners -join ', ')."
+    }
+
+    $udpOwners = @(
+        Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess
+    ) | Sort-Object -Unique
+    foreach ($processId in $udpOwners) {
+        $serviceNames = @(
+            Get-CimInstance Win32_Service -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty Name
+        )
+        if ($settings.DnsReuseAddr -and $serviceNames -contains 'SharedAccess') {
+            Write-Warning "UDP port $Port is also owned by SharedAccess (PID $processId); continuing with reuse_addr enabled."
+            continue
+        }
+        $ownerDescription = if ($serviceNames.Count) {
+            "PID $processId (service: $($serviceNames -join ', '))"
+        } else {
+            "PID $processId"
+        }
+        throw "UDP port $Port is already in use by $ownerDescription."
+    }
+}
 function Wait-SingBoxHealthy([int]$Seconds = 90) {
     $deadline = (Get-Date).AddSeconds($Seconds)
     $headers = @{ Authorization = "Bearer $($runtime.clash_secret)" }
@@ -178,7 +208,7 @@ $singRegisteredDuringInstall = $false
 try {
     & (Join-Path $PSScriptRoot 'Update-Config.ps1') -NoRestart -CorePath $stagedSingBox
     Stop-WinSW $singWrapper 'sing-box' $singInstalled
-    Assert-PortAvailable $settings.DnsListenPort
+    Assert-DnsPortAvailable $settings.DnsListenPort
     if ($settings.NativeApiEnabled) { Assert-PortAvailable $settings.NativeApiPort }
     if ($settings.ClashApiEnabled) { Assert-PortAvailable $settings.ClashApiPort }
     Assert-PortAvailable $settings.MixedPort

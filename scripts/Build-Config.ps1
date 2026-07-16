@@ -135,6 +135,7 @@ $config.inbounds = @($config.inbounds | Where-Object tag -ne 'dns-in') + @([pscu
     tag = 'dns-in'
     listen = $settings.DnsListen
     listen_port = $settings.DnsListenPort
+    reuse_addr = $settings.DnsReuseAddr
 })
 
 if (($settings.ClashApiEnabled -or $settings.NativeApiEnabled) -and

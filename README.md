@@ -35,7 +35,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1
 - Sub-Store 前端：`http://127.0.0.1:40007/`
 - Sub-Store 后端：`http://127.0.0.1:40008/`（仅脚本和前端代理访问）
 - 混合代理：`0.0.0.0:30890`，认证沿用旧配置。
-- DNS：`0.0.0.0:53`，同时监听 UDP 和 TCP；Windows 防火墙只允许 `LocalSubnet` 访问。
+- DNS：`0.0.0.0:53`，同时监听 UDP 和 TCP；Windows 防火墙只允许 `LocalSubnet` 访问。DNS inbound 默认开启 `reuse_addr`，允许与 Hyper-V/ICS 的 `SharedAccess` UDP 53 共存。
 - TUN 网卡固定为 `Meta`；服务启动后会对 `Meta` 和 `vEthernet (Network Bridge)` 显式开启 IPv4、IPv6 forwarding。
 
 修改手工域名后，或需要更新订阅时，以管理员身份执行：
@@ -76,6 +76,8 @@ Test-NetConnection -ComputerName api6.ipify.org -Port 443
 ```
 
 虚拟机将 DNS 服务器设为 Windows 主机在 VM 网络上的 IPv4 地址，而不是 `127.0.0.1`。防火墙规则仅绑定 `settings.psd1` 的 `DnsFirewallInterfaceAlias`（默认 `vEthernet (Network Bridge)`），不会向物理 LAN/WLAN 开放。可从虚拟机分别执行 `nslookup -type=A example.com <主机地址>` 和 `nslookup -type=AAAA example.com <主机地址>`；预期分别得到 `198.18.0.0/15` 和 `fd18:1111:1111::/64` 中的 Fake-IP。若服务无法启动，先以管理员身份运行 `Get-NetUDPEndpoint -LocalPort 53` 和 `Get-NetTCPConnection -LocalPort 53`，确认没有其他 DNS 服务占用端口。
+
+Hyper-V Default Switch 或 Internet Connection Sharing 会由 `svchost.exe` 中的 `SharedAccess` 服务占用 UDP 53。Mihomo 会为 DNS UDP socket 设置 `SO_REUSEADDR`，且单独的 UDP DNS listener 启动失败不会终止整个核心；TUN `dns-hijack` 仍可能令查询表现正常。sing-box inbound 默认不复用地址，而且 UDP bind 失败会中止服务，因此本项目显式设置 `reuse_addr = true`。安装器仅对白名单服务 `SharedAccess` 的 UDP 53 冲突放行；TCP 53或其他进程占用仍会中止安装。Windows 对共享 UDP 端口的数据报分发不提供确定性，部署后必须从虚拟机验证实际应答来自 sing-box；若结果不稳定，应将 `DnsListen` 改成 Hyper-V 主机侧的具体 IPv4 地址，或停用 ICS 后由 sing-box 独占 53。
 
 仅开启 Windows forwarding 不会自动给 Hyper-V 虚拟机分配 IPv6。若虚拟机本身也需要原生 IPv6 地址和默认路由，必须在 VM 侧使用独立于 TUN `/126` 的 IPv6 前缀（通常 `/64`），将主机 bridge 地址设为网关，并静态配置或额外提供 Router Advertisement；不要把 `fdfe:dcba:9876::/126` 直接复用到 VM 网段。
 
