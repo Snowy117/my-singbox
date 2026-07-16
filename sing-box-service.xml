@@ -1,0 +1,29 @@
+<service>
+  <id>sing-box</id>
+  <name>sing-box</name>
+  <description>This service runs sing-box.</description>
+
+  <workingdirectory>%BASE%</workingdirectory>
+  <executable>%BASE%\runtime\sing-box.exe</executable>
+  <arguments>run -D "%BASE%\data" -c "%BASE%\config.json"</arguments>
+
+  <serviceaccount>
+    <localSystem />
+  </serviceaccount>
+
+  <poststart>
+    <executable>C:\Program Files\PowerShell\7\pwsh.exe</executable>
+    <arguments>-NoProfile -ExecutionPolicy Bypass -File "%BASE%\scripts\poststart.ps1"</arguments>
+    <stdoutPath>%BASE%\logs\poststart.out.log</stdoutPath>
+    <stderrPath>%BASE%\logs\poststart.err.log</stderrPath>
+  </poststart>
+
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll-by-time">
+    <pattern>yyyy-MM-dd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+    <keepFiles>30</keepFiles>
+  </log>
+  <onfailure action="restart" delay="10 sec" />
+</service>
+

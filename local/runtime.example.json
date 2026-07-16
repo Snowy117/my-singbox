@@ -1,0 +1,11 @@
+{
+  "mixed_users": [
+    { "username": "local", "password": "CHANGE_ME" }
+  ],
+  "clash_secret": "CHANGE_ME",
+  "subscriptions": [
+    { "name": "provider-a", "url": "https://example.com/subscription", "prefix": "A>" }
+  ],
+  "custom_outbounds": []
+}
+

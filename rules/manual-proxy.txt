@@ -1,0 +1,5 @@
+# One domain per line. Bare domains and +.suffix both include subdomains.
+gcli.ggchan.dev
+click.redditmail.com
+arena.ai
+
