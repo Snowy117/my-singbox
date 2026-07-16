@@ -61,6 +61,37 @@ function Start-WinSW([string]$Wrapper) {
     & $Wrapper start
     if ($LASTEXITCODE -ne 0) { throw "WinSW start failed for $Wrapper with exit code $LASTEXITCODE" }
 }
+function Assert-PortAvailable([int]$Port) {
+    $owners = @(
+        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess
+        Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess
+    ) | Sort-Object -Unique
+    if ($owners.Count) {
+        throw "Port $Port is already in use by process ID(s): $($owners -join ', ')."
+    }
+}
+function Wait-SingBoxHealthy([int]$Seconds = 90) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    $headers = @{ Authorization = "Bearer $($runtime.clash_secret)" }
+    do {
+        $service = Get-Service -Name 'sing-box' -ErrorAction SilentlyContinue
+        if ($service -and $service.Status -eq 'Running') {
+            if (-not $settings.ClashApiEnabled) { return }
+            try {
+                $version = Invoke-RestMethod `
+                    -Uri "http://$($settings.ClashApiListen):$($settings.ClashApiPort)/version" `
+                    -Headers $headers -TimeoutSec 2
+                if ($version.version) { return }
+            } catch {
+                # The service may still be downloading initial remote rule-sets.
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    throw "sing-box did not become healthy within $Seconds seconds."
+}
 function Sync-SubStoreServiceXml {
     $path = Join-Path $root 'sub-store-service.xml'
     [xml]$xml = Get-Content -LiteralPath $path -Raw
@@ -116,6 +147,7 @@ if (-not $SkipMigration -and -not (Test-Path (Join-Path $root 'local\runtime.jso
 if (-not (Test-Path (Join-Path $root 'local\runtime.json'))) {
     throw 'Create local/runtime.json from local/runtime.example.json before continuing.'
 }
+$runtime = Get-Content (Join-Path $root 'local\runtime.json') -Raw | ConvertFrom-Json
 
 Sync-SubStoreServiceXml
 Stop-WinSW $subStoreWrapper 'sub-store' $subStoreInstalled
@@ -127,16 +159,67 @@ Register-WinSW $subStoreWrapper $subStoreInstalled
 Start-WinSW $subStoreWrapper
 
 & (Join-Path $PSScriptRoot 'Initialize-SubStore.ps1')
-& (Join-Path $PSScriptRoot 'Update-Config.ps1') -NoRestart -CorePath $stagedSingBox
 
-Stop-WinSW $singWrapper 'sing-box' $singInstalled
-Copy-Item $stagedSingBox (Join-Path $root 'runtime\sing-box.exe') -Force
-Install-WebRoot $dashboardRoot (Join-Path $root 'ui')
-Copy-Item $winsw $singWrapper -Force
-Register-WinSW $singWrapper $singInstalled
-Start-WinSW $singWrapper
+$singBackup = Join-Path $work 'sing-box-backup'
+if (Test-Path $singBackup) { Remove-Item $singBackup -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $singBackup | Out-Null
+$backupFiles = [ordered]@{
+    'sing-box.exe' = (Join-Path $root 'runtime\sing-box.exe')
+    'config.json' = (Join-Path $root 'config.json')
+    'sing-box-service.exe' = $singWrapper
+}
+foreach ($entry in $backupFiles.GetEnumerator()) {
+    if (Test-Path -LiteralPath $entry.Value -PathType Leaf) {
+        Copy-Item -LiteralPath $entry.Value -Destination (Join-Path $singBackup $entry.Key) -Force
+    }
+}
+
+$singRegisteredDuringInstall = $false
+try {
+    & (Join-Path $PSScriptRoot 'Update-Config.ps1') -NoRestart -CorePath $stagedSingBox
+    Stop-WinSW $singWrapper 'sing-box' $singInstalled
+    Assert-PortAvailable $settings.DnsListenPort
+    if ($settings.NativeApiEnabled) { Assert-PortAvailable $settings.NativeApiPort }
+    if ($settings.ClashApiEnabled) { Assert-PortAvailable $settings.ClashApiPort }
+    Assert-PortAvailable $settings.MixedPort
+
+    Copy-Item $stagedSingBox (Join-Path $root 'runtime\sing-box.exe') -Force
+    Install-WebRoot $dashboardRoot (Join-Path $root 'ui')
+    Copy-Item $winsw $singWrapper -Force
+    Register-WinSW $singWrapper $singInstalled
+    $singRegisteredDuringInstall = -not $singInstalled
+    Start-WinSW $singWrapper
+    Wait-SingBoxHealthy
+} catch {
+    $upgradeError = $_
+    Write-Warning "sing-box upgrade failed: $($upgradeError.Exception.Message)"
+    if (Test-ServiceInstalled 'sing-box') {
+        & $singWrapper stopwait 2>$null
+    }
+    if ($singRegisteredDuringInstall) {
+        & $singWrapper uninstall 2>$null
+    }
+    foreach ($entry in $backupFiles.GetEnumerator()) {
+        $backupPath = Join-Path $singBackup $entry.Key
+        if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+            Copy-Item -LiteralPath $backupPath -Destination $entry.Value -Force
+        } elseif (-not $singInstalled) {
+            Remove-Item -LiteralPath $entry.Value -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($singInstalled -and
+        (Test-Path -LiteralPath (Join-Path $root 'runtime\sing-box.exe') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $root 'config.json') -PathType Leaf)) {
+        Start-WinSW $singWrapper
+    }
+    throw $upgradeError
+}
 
 Write-Host 'Installation complete.'
 Write-Host "Zashboard: http://$($settings.ClashApiListen):$($settings.ClashApiPort)/ui/"
+if ($settings.NativeApiEnabled) {
+    Write-Host "sing-box native API (gRPC/gRPC-Web): http://$($settings.NativeApiListen):$($settings.NativeApiPort)/"
+}
+Write-Host "DNS for local virtual machines: $($settings.DnsListen):$($settings.DnsListenPort) (TCP/UDP)"
 Write-Host "Sub-Store: http://$($settings.SubStoreListen):$($settings.SubStoreFrontendPort)/"
 

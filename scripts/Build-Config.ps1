@@ -60,6 +60,16 @@ $educationTag = '🎓 北京大学'
 $allNodes = @($nodes.outbounds) + @($nodes.endpoints) + @($runtime.custom_outbounds)
 $nodeTags = @($allNodes | ForEach-Object { $_.tag })
 
+# Preserve Mihomo provider override `ip-version: ipv6-prefer` when resolving
+# proxy server hostnames. System DNS avoids an IPv4-only bootstrap dependency
+# when the physical uplink is IPv6-only. IP-literal servers are unaffected.
+foreach ($node in @($allNodes | Where-Object { $_.PSObject.Properties['server'] })) {
+    Set-JsonProperty $node 'domain_resolver' ([pscustomobject]@{
+        server = $settings.ProxyServerDnsServer
+        strategy = $settings.DnsStrategy
+    })
+}
+
 # Add local outbounds before generated subscription nodes.
 $config.outbounds = @($config.outbounds) + @($runtime.custom_outbounds) + @($nodes.outbounds)
 if (-not $config.PSObject.Properties['endpoints']) { $config | Add-Member -NotePropertyName endpoints -NotePropertyValue @() }
@@ -111,7 +121,26 @@ $tun = $config.inbounds | Where-Object type -eq 'tun' | Select-Object -First 1
 Set-JsonProperty $tun 'interface_name' $settings.TunInterface
 Set-JsonProperty $tun 'mtu' $settings.TunMtu
 Set-JsonProperty $tun 'stack' 'mixed'
+Set-JsonProperty $tun 'address' @($settings.TunAddresses)
+Set-JsonProperty $tun 'dns_mode' 'hijack'
+Set-JsonProperty $tun 'dns_address' @($settings.TunDnsAddresses)
+Set-JsonProperty $tun 'auto_route' $true
+Set-JsonProperty $tun 'strict_route' $true
+Set-JsonProperty $tun 'route_address' @($settings.TunRouteAddresses)
+Set-JsonProperty $tun 'route_exclude_address' @($settings.TunRouteExcludeAddresses)
 if ($tun.PSObject.Properties['platform']) { $tun.PSObject.Properties.Remove('platform') }
+
+$config.inbounds = @($config.inbounds | Where-Object tag -ne 'dns-in') + @([pscustomobject]@{
+    type = 'direct'
+    tag = 'dns-in'
+    listen = $settings.DnsListen
+    listen_port = $settings.DnsListenPort
+})
+
+if (($settings.ClashApiEnabled -or $settings.NativeApiEnabled) -and
+    ([string]::IsNullOrWhiteSpace($runtime.clash_secret) -or $runtime.clash_secret -eq 'CHANGE_ME')) {
+    throw 'Set a non-empty clash_secret in local/runtime.json before enabling an API.'
+}
 
 if ($settings.ClashApiEnabled) {
     Set-JsonProperty $config.experimental.clash_api 'external_controller' "$($settings.ClashApiListen):$($settings.ClashApiPort)"
@@ -127,16 +156,46 @@ if ($settings.ClashApiEnabled) {
 } else {
     $config.experimental.PSObject.Properties.Remove('clash_api')
 }
+
+$existingServices = if ($config.PSObject.Properties['services']) {
+    @($config.services | Where-Object { $_.type -ne 'api' -and $_.tag -ne 'native-api' })
+} else {
+    @()
+}
+if ($settings.NativeApiEnabled) {
+    $existingServices += [pscustomobject]@{
+        type = 'api'
+        tag = 'native-api'
+        listen = $settings.NativeApiListen
+        listen_port = $settings.NativeApiPort
+        secret = $runtime.clash_secret
+        access_control_allow_origin = @(
+            "http://$($settings.NativeApiListen):$($settings.NativeApiPort)",
+            "http://localhost:$($settings.NativeApiPort)"
+        )
+        access_control_allow_private_network = $false
+        dashboard = $false
+    }
+}
+$servicesArray = [object[]]@($existingServices)
+Set-JsonProperty $config 'services' ([object]$servicesArray)
+
 Set-JsonProperty $config.experimental.cache_file 'path' (Join-Path $root 'data\cache.db')
 Set-JsonProperty $config.experimental.cache_file 'store_fakeip' $true
+Set-JsonProperty $config.experimental.cache_file 'store_dns' $true
+foreach ($legacyCacheField in @('store_rdrc', 'rdrc_timeout')) {
+    if ($config.experimental.cache_file.PSObject.Properties[$legacyCacheField]) {
+        $config.experimental.cache_file.PSObject.Properties.Remove($legacyCacheField)
+    }
+}
 
 $manualDirect = Read-DomainList (Join-Path $root 'rules\manual-direct.txt')
 $manualProxy = Read-DomainList (Join-Path $root 'rules\manual-proxy.txt')
 
-# sing-box has no DNS fallback/balancer in 1.13. All original Mihomo upstreams
+# sing-box has no DNS fallback/balancer. All original Mihomo upstreams
 # are retained, while settings.psd1 selects the active direct and global tags.
 $dnsServers = @(
-    [pscustomobject]@{ type = 'dhcp'; tag = 'System-DNS' },
+    [pscustomobject]@{ type = 'local'; tag = 'System-DNS' },
     [pscustomobject]@{ type = 'udp'; tag = 'CN-DNS-Bootstrap-114-A'; server = '114.114.114.110'; server_port = 53 },
     [pscustomobject]@{ type = 'udp'; tag = 'CN-DNS-Bootstrap-114-B'; server = '114.114.115.119'; server_port = 53 },
     [pscustomobject]@{
@@ -204,60 +263,88 @@ if (-not ($config.route.rule_set.tag -contains 'FakeIP-Filter-SRS')) {
         type = 'remote'
         format = 'binary'
         url = 'https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset-compatible/fakeip-filter.srs'
-        download_detour = $directTag
+        http_client = [pscustomobject]@{
+            domain_resolver = [pscustomobject]@{
+                server = $settings.DirectDnsServer
+                strategy = $settings.DnsStrategy
+            }
+        }
+    }
+}
+
+# sing-box 1.14 replaces the rule-set download_detour field with an HTTP client.
+foreach ($ruleSet in @($config.route.rule_set | Where-Object type -eq 'remote')) {
+    if ($ruleSet.PSObject.Properties['download_detour']) {
+        $httpClient = if ($ruleSet.download_detour -eq $directTag) {
+            [pscustomobject]@{
+                domain_resolver = [pscustomobject]@{
+                    server = $settings.DirectDnsServer
+                    strategy = $settings.DnsStrategy
+                }
+            }
+        } else {
+            [pscustomobject]@{ detour = $ruleSet.download_detour }
+        }
+        Set-JsonProperty $ruleSet 'http_client' $httpClient
+        $ruleSet.PSObject.Properties.Remove('download_detour')
     }
 }
 
 $educationDnsRule = [pscustomobject]@{
     action = 'route'; domain_suffix = @($settings.EducationDomains); server = 'System-DNS'
-    strategy = $settings.DnsStrategy
 }
 $config.dns.rules = @($hostsDnsRules) + @(@(
     $educationDnsRule,
     [pscustomobject]@{
+        action = 'predefined'; domain_suffix = @($settings.Ipv4PreferredDomains)
+        query_type = @('AAAA'); answer = @()
+    },
+    [pscustomobject]@{
         action = 'route'; domain_suffix = @($settings.Ipv4PreferredDomains)
-        server = $settings.DirectDnsServer; strategy = 'prefer_ipv4'
+        server = $settings.DirectDnsServer
         client_subnet = $settings.DnsClientSubnet
     },
     [pscustomobject]@{
         action = 'route'; rule_set = @('GeoSite-Private'); server = $settings.DirectDnsServer
-        strategy = $settings.DnsStrategy
     },
     [pscustomobject]@{
         action = 'route'; rule_set = @('FakeIP-Filter-SRS'); server = $settings.DirectDnsServer
-        strategy = $settings.DnsStrategy; client_subnet = $settings.DnsClientSubnet
+        client_subnet = $settings.DnsClientSubnet
     },
     [pscustomobject]@{
         action = 'route'; query_type = @('A', 'AAAA'); server = 'FakeIP-DNS'
-        strategy = $settings.DnsStrategy
     },
     [pscustomobject]@{
         action = 'route'; clash_mode = 'direct'; server = $settings.DirectDnsServer
-        strategy = $settings.DnsStrategy; client_subnet = $settings.DnsClientSubnet
+        client_subnet = $settings.DnsClientSubnet
     },
     [pscustomobject]@{
         action = 'route'; clash_mode = 'global'; server = $settings.RemoteDnsServer
-        strategy = $settings.DnsStrategy; client_subnet = $settings.DnsClientSubnet
+        client_subnet = $settings.DnsClientSubnet
     },
     [pscustomobject]@{
         action = 'route'; rule_set = @('GeoSite-CN'); server = $settings.DirectDnsServer
-        strategy = $settings.DnsStrategy; client_subnet = $settings.DnsClientSubnet
+        client_subnet = $settings.DnsClientSubnet
     },
     [pscustomobject]@{
         action = 'route'; rule_set = @('GeoLocation-!CN'); server = $settings.RemoteDnsServer
-        strategy = $settings.DnsStrategy; client_subnet = $settings.DnsClientSubnet
+        client_subnet = $settings.DnsClientSubnet
     }
 ) | Where-Object { $null -ne $_ })
 Set-JsonProperty $config.dns 'final' $settings.RemoteDnsServer
 Set-JsonProperty $config.dns 'strategy' $settings.DnsStrategy
 Set-JsonProperty $config.dns 'cache_capacity' 2048
 Set-JsonProperty $config.dns 'reverse_mapping' $true
+if ($config.dns.PSObject.Properties['independent_cache']) {
+    $config.dns.PSObject.Properties.Remove('independent_cache')
+}
 Set-JsonProperty $config.route 'default_domain_resolver' ([pscustomobject]@{
     server = $settings.DirectDnsServer
     strategy = $settings.DnsStrategy
 })
 $priorityRules = @(@(
     [pscustomobject]@{ action = 'sniff'; inbound = 'tun-in' },
+    [pscustomobject]@{ action = 'hijack-dns'; inbound = 'dns-in' },
     [pscustomobject]@{ action = 'hijack-dns'; protocol = 'dns' },
     (New-RouteRule $directTag $manualDirect),
     (New-RouteRule $proxyTag $manualProxy),
