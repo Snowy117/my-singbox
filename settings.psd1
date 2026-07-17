@@ -41,7 +41,32 @@
     RemoteDnsServer = 'Global-DNS-Recipes'
     ProxyServerDnsServer = 'System-DNS'
     DnsStrategy = 'prefer_ipv6'
-    Ipv4PreferredDomains = @('edu.cn', 'sukaka.ai6.me', 'luogu.com.cn')
+    DirectIpv4OnlyProcesses = @(
+        'WeChat.exe'
+        'WeChatAppEx.exe'
+        'Weixin.exe'
+        'WeixinAppEx.exe'
+    )
+    Ipv4PreferredDomains = @(
+        'edu.cn'
+        'sukaka.ai6.me'
+        'luogu.com.cn'
+        'qq.com'
+        'weixinbridge.com'
+        'weixin.qq.com'
+        'wx.qq.com'
+        'qpic.cn'
+        'gtimg.cn'
+        'gtimg.com'
+        'servicewechat.com'
+        'wechat.com'
+        'weixin.com'
+        'weixinsxy.com'
+        'wxaurl.cn'
+        'wxgateway.com'
+        'wxlivecdn.com'
+        'wxmpurl.cn'
+    )
     DnsClientSubnet = '115.27.215.1/24'
     FakeIpV4Range = '198.18.0.0/15'
     FakeIpV6Range = 'fd18:1111:1111::/64'

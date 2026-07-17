@@ -362,7 +362,22 @@ $priorityRules = @(@(
     [pscustomobject]@{ action = 'hijack-dns'; protocol = 'dns' },
     (New-RouteRule $directTag $manualDirect),
     (New-RouteRule $proxyTag $manualProxy),
-    [pscustomobject]@{ action = 'route'; process_name = @('WeChat.exe', 'WeChatAppEx.exe', 'Weixin.exe'); outbound = $directTag },
+    [pscustomobject]@{
+        type = 'logical'
+        mode = 'and'
+        rules = @(
+            [pscustomobject]@{ process_name = @($settings.DirectIpv4OnlyProcesses) },
+            [pscustomobject]@{ ip_version = 6 }
+        )
+        action = 'reject'
+        method = 'default'
+        no_drop = $true
+    },
+    [pscustomobject]@{
+        action = 'route'
+        process_name = @($settings.DirectIpv4OnlyProcesses)
+        outbound = $directTag
+    },
     [pscustomobject]@{ action = 'route'; domain_suffix = @($settings.EducationDomains); outbound = $educationTag },
     [pscustomobject]@{ action = 'route'; ip_cidr = @($settings.EducationCidrs); outbound = $educationTag }
 ) | Where-Object { $null -ne $_ })
