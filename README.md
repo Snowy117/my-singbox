@@ -52,7 +52,18 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-Config.ps1
 
 `pku.edu.cn`、`openjudge.cn` 和 `qmazon.local` 默认使用系统分配的 DNS（sing-box `type: dhcp`，等价于原 Mihomo 的 `system://`）。相关域名和 `10.0.0.0/8`、`162.105.0.0/16`、`115.27.0.0/16` 进入 `🎓 北京大学` 选择器，可在 Zashboard 中选择直连或 PKU 私有节点。
 
-DNS 尽量复刻原 Mihomo 配置：保留两组 114 bootstrap、阿里/腾讯/360 DoT、三组通用 DoH、系统 DNS、本地预定义域名和 Fake-IP。默认查询和代理服务器域名解析策略为 `prefer_ipv6`，对应原 provider 的 `ip-version: ipv6-prefer`；代理服务器 hostname 默认通过 `System-DNS` 的 `local` transport 交给 Windows 系统 resolver，避免本地只有 IPv6 上联时依赖 IPv4 的 DHCP/114 bootstrap。`settings.psd1` 的 `Ipv4PreferredDomains` 对指定域名返回空 AAAA 并使用直连 DNS，目前包括原有 IPv4 特例和微信核心域名、图片/静态资源域名；其他域名仍保留 IPv6。`DirectIpv4OnlyProcesses` 中的微信进程会直连，且其 IPv6 连接会收到立即拒绝以便快速回退 IPv4；这不影响其他进程使用 IPv6。Fake-IP 地址段为 `198.18.0.0/15` 与 `fd18:1111:1111::/64`。`local/dns-hosts.json` 中每个域名的根域及所有层级子域都会返回同一组预定义 A/AAAA 地址；这些规则、系统 DNS、私有域名和 IPv4 特例优先于 Fake-IP。其他 A/AAAA 查询返回 Fake-IP；非地址记录再按国内/国外规则选择上游。`settings.psd1` 的 `DirectDnsServer`/`RemoteDnsServer` 决定当前主用服务器，`ProxyServerDnsServer` 决定节点入口域名解析；其他服务器作为可手工切换的备用项。sing-box 不支持 Mihomo 式 DNS fallback/balancer，因此不能在单条规则中自动按顺序切换多个 DNS。
+DNS 尽量复刻原 Mihomo 配置：保留两组 114 bootstrap、阿里/腾讯/360 DoT、三组通用 DoH、系统 DNS、本地预定义域名和 Fake-IP。默认查询和代理服务器域名解析策略为 `prefer_ipv6`，对应原 provider 的 `ip-version: ipv6-prefer`；代理服务器 hostname 默认通过 `System-DNS` 的 `local` transport 交给 Windows 系统 resolver，避免本地只有 IPv6 上联时依赖 IPv4 的 DHCP/114 bootstrap。`settings.psd1` 的 `Ipv4PreferredDomains` 对指定域名返回空 AAAA 并使用直连 DNS；`WeChatDomains` 额外覆盖微信核心和图片 CDN，同样抑制 AAAA、使用国内直连 DNS，并强制域名直连，不依赖 TUN 的进程识别。`DirectIpv4OnlyProcesses` 中的微信进程仍会直连，且其 IPv6 连接会收到立即拒绝以便快速回退 IPv4；这不影响其他进程使用 IPv6。Fake-IP 地址段为 `198.18.0.0/15` 与 `fd18:1111:1111::/64`。`local/dns-hosts.json` 中每个域名的根域及所有层级子域都会返回同一组预定义 A/AAAA 地址；这些规则、系统 DNS、私有域名和 IPv4 特例优先于 Fake-IP。其他 A/AAAA 查询返回 Fake-IP；非地址记录再按国内/国外规则选择上游。`settings.psd1` 的 `DirectDnsServer`/`RemoteDnsServer` 决定当前主用服务器，`ProxyServerDnsServer` 决定节点入口域名解析；其他服务器作为可手工切换的备用项。sing-box 不支持 Mihomo 式 DNS fallback/balancer，因此不能在单条规则中自动按顺序切换多个 DNS。
+
+更新微信规则后，应完全退出微信及其子进程，再刷新 Windows DNS 缓存并重新启动微信：
+
+```powershell
+Get-Process WeChat,WeChatAppEx,Weixin,WeixinAppEx -ErrorAction SilentlyContinue | Stop-Process -Force
+Clear-DnsClientCache
+Resolve-DnsName qlogo.cn -Type AAAA -Server 127.0.0.1
+Resolve-DnsName qlogo.cn -Type A -Server 127.0.0.1
+```
+
+AAAA 查询预期为无答案，A 查询预期返回国内 DNS 的真实 IPv4，而不是 Fake-IP。若更新并重启服务后仍读到旧答案，可停止 sing-box，先备份再删除 `data\cache.db`，然后启动服务；这会清除持久化 DNS/Fake-IP 缓存，也可能重置部分运行时选择。`rules/manual-direct.txt` 和 `rules/manual-proxy.txt` 的优先级高于内置微信规则，排障时不要在 `manual-proxy.txt` 中加入微信域名。
 
 当前固定使用 sing-box `1.14.0-alpha.45`。端口 `40090` 仍是供 Zashboard 使用的 Clash REST API；端口 `40091` 是 `services` 中的原生 sing-box gRPC/gRPC-Web API。`/daemon.StartedService/GetVersion` 只存在于后者，调用方必须发送合法的 gRPC 或 gRPC-Web POST、protobuf 帧及 `authorization: Bearer <secret>` 元数据；普通浏览器 GET 返回 404 不代表 API 未开启。
 

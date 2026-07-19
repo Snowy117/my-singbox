@@ -205,6 +205,8 @@ foreach ($legacyCacheField in @('store_rdrc', 'rdrc_timeout')) {
 
 $manualDirect = Read-DomainList (Join-Path $root 'rules\manual-direct.txt')
 $manualProxy = Read-DomainList (Join-Path $root 'rules\manual-proxy.txt')
+$wechatDomains = @($settings.WeChatDomains)
+$ipv4PreferredDomains = @($settings.Ipv4PreferredDomains + $wechatDomains | Select-Object -Unique)
 
 # sing-box has no DNS fallback/balancer. All original Mihomo upstreams
 # are retained, while settings.psd1 selects the active direct and global tags.
@@ -310,11 +312,11 @@ $educationDnsRule = [pscustomobject]@{
 $config.dns.rules = @($hostsDnsRules) + @(@(
     $educationDnsRule,
     [pscustomobject]@{
-        action = 'predefined'; domain_suffix = @($settings.Ipv4PreferredDomains)
+        action = 'predefined'; domain_suffix = $ipv4PreferredDomains
         query_type = @('AAAA'); answer = @()
     },
     [pscustomobject]@{
-        action = 'route'; domain_suffix = @($settings.Ipv4PreferredDomains)
+        action = 'route'; domain_suffix = $ipv4PreferredDomains
         server = $settings.DirectDnsServer
         client_subnet = $settings.DnsClientSubnet
     },
@@ -372,6 +374,11 @@ $priorityRules = @(@(
         action = 'reject'
         method = 'default'
         no_drop = $true
+    },
+    [pscustomobject]@{
+        action = 'route'
+        domain_suffix = $wechatDomains
+        outbound = $directTag
     },
     [pscustomobject]@{
         action = 'route'
