@@ -6,6 +6,15 @@
   "subscriptions": [
     { "name": "provider-a", "url": "https://example.com/subscription", "prefix": "A>" }
   ],
-  "custom_outbounds": []
+  "custom_outbounds": [
+    {
+      "type": "vless",
+      "tag": "example-private-node",
+      "server": "example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-0000-0000-000000000000",
+      "tls": { "enabled": true, "server_name": "example.com" }
+    }
+  ]
 }
 

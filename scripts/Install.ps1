@@ -3,13 +3,13 @@ param(
     [switch]$SkipMigration
 )
 
-# Run from an elevated PowerShell 7 terminal.
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $versions = Import-PowerShellDataFile (Join-Path $root 'versions.psd1')
 $settings = Import-PowerShellDataFile (Join-Path $root 'settings.psd1')
 $work = Join-Path $root 'work\install'
-New-Item -ItemType Directory -Force -Path $work, (Join-Path $root 'runtime'), (Join-Path $root 'data'), (Join-Path $root 'logs'), (Join-Path $root 'sub-store\data') | Out-Null
+New-Item -ItemType Directory -Force -Path $work, (Join-Path $root 'runtime'), `
+    (Join-Path $root 'data'), (Join-Path $root 'logs'), (Join-Path $root 'sub-store\data') | Out-Null
 
 function Download([string]$Uri, [string]$Path) {
     Write-Host "Downloading $Uri"
@@ -28,100 +28,48 @@ function Download([string]$Uri, [string]$Path) {
         }
     }
 }
+
 function Expand-Clean([string]$Archive, [string]$Destination) {
-    if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force }
+    if (Test-Path -LiteralPath $Destination) { Remove-Item $Destination -Recurse -Force }
     Expand-Archive -LiteralPath $Archive -DestinationPath $Destination -Force
 }
+
 function Find-WebRoot([string]$Archive, [string]$StagingPath) {
     Expand-Clean $Archive $StagingPath
     $indexes = @(Get-ChildItem -LiteralPath $StagingPath -Recurse -File -Filter index.html)
     if ($indexes.Count -ne 1) { throw "Expected one index.html in $Archive; found $($indexes.Count)." }
     return $indexes[0].Directory.FullName
 }
+
 function Install-WebRoot([string]$Source, [string]$Destination) {
-    if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force }
+    if (Test-Path -LiteralPath $Destination) { Remove-Item $Destination -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     Get-ChildItem -LiteralPath $Source -Force | Copy-Item -Destination $Destination -Recurse -Force
 }
+
 function Test-ServiceInstalled([string]$Name) {
     return $null -ne (Get-Service -Name $Name -ErrorAction SilentlyContinue)
 }
-function Stop-WinSW([string]$Wrapper, [string]$Name, [bool]$Installed) {
-    if (-not $Installed) { return }
-    if ((Get-Service -Name $Name).Status -eq 'Stopped') { return }
-    & $Wrapper stopwait
-    if ($LASTEXITCODE -ne 0) { throw "WinSW stopwait failed for $Wrapper with exit code $LASTEXITCODE" }
-}
-function Register-WinSW([string]$Wrapper, [bool]$Installed) {
-    if ($Installed) { return }
-    & $Wrapper install
-    if ($LASTEXITCODE -ne 0) { throw "WinSW install failed for $Wrapper with exit code $LASTEXITCODE" }
-}
-function Start-WinSW([string]$Wrapper) {
-    & $Wrapper start
-    if ($LASTEXITCODE -ne 0) { throw "WinSW start failed for $Wrapper with exit code $LASTEXITCODE" }
-}
-function Assert-PortAvailable([int]$Port) {
-    $owners = @(
-        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess
-        Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess
-    ) | Sort-Object -Unique
-    if ($owners.Count) {
-        throw "Port $Port is already in use by process ID(s): $($owners -join ', ')."
-    }
-}
-function Assert-DnsPortAvailable([int]$Port) {
-    $tcpOwners = @(
-        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess
-    ) | Sort-Object -Unique
-    if ($tcpOwners.Count) {
-        throw "TCP port $Port is already in use by process ID(s): $($tcpOwners -join ', ')."
-    }
 
-    $udpOwners = @(
-        Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess
-    ) | Sort-Object -Unique
-    foreach ($processId in $udpOwners) {
-        $serviceNames = @(
-            Get-CimInstance Win32_Service -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue |
-                Select-Object -ExpandProperty Name
-        )
-        if ($settings.DnsReuseAddr -and $serviceNames -contains 'SharedAccess') {
-            Write-Warning "UDP port $Port is also owned by SharedAccess (PID $processId); continuing with reuse_addr enabled."
-            continue
-        }
-        $ownerDescription = if ($serviceNames.Count) {
-            "PID $processId (service: $($serviceNames -join ', '))"
-        } else {
-            "PID $processId"
-        }
-        throw "UDP port $Port is already in use by $ownerDescription."
-    }
+function Stop-ServiceAndWait([string]$Name) {
+    if (-not (Test-ServiceInstalled $Name)) { return }
+    $service = Get-Service -Name $Name
+    if ($service.Status -eq 'Stopped') { return }
+    Stop-Service -InputObject $service -Force
+    $service.WaitForStatus(
+        [System.ServiceProcess.ServiceControllerStatus]::Stopped,
+        [TimeSpan]::FromSeconds(60)
+    )
+    $service.Refresh()
+    if ($service.Status -ne 'Stopped') { throw "Service '$Name' did not stop within 60 seconds." }
 }
-function Wait-SingBoxHealthy([int]$Seconds = 90) {
-    $deadline = (Get-Date).AddSeconds($Seconds)
-    $headers = @{ Authorization = "Bearer $($runtime.clash_secret)" }
-    do {
-        $service = Get-Service -Name 'sing-box' -ErrorAction SilentlyContinue
-        if ($service -and $service.Status -eq 'Running') {
-            if (-not $settings.ClashApiEnabled) { return }
-            try {
-                $version = Invoke-RestMethod `
-                    -Uri "http://$($settings.ClashApiListen):$($settings.ClashApiPort)/version" `
-                    -Headers $headers -TimeoutSec 2
-                if ($version.version) { return }
-            } catch {
-                # The service may still be downloading initial remote rule-sets.
-            }
-        }
-        Start-Sleep -Milliseconds 500
-    } while ((Get-Date) -lt $deadline)
-    throw "sing-box did not become healthy within $Seconds seconds."
+
+function Register-WinSW([string]$Wrapper, [string]$Name) {
+    if (Test-ServiceInstalled $Name) { return }
+    & $Wrapper install
+    if ($LASTEXITCODE -ne 0) { throw "WinSW install failed for $Name with exit code $LASTEXITCODE" }
 }
+
 function Sync-SubStoreServiceXml {
     $path = Join-Path $root 'sub-store-service.xml'
     [xml]$xml = Get-Content -LiteralPath $path -Raw
@@ -138,11 +86,6 @@ function Sync-SubStoreServiceXml {
     }
     $xml.Save($path)
 }
-
-$singWrapper = Join-Path $root 'sing-box-service.exe'
-$subStoreWrapper = Join-Path $root 'sub-store-service.exe'
-$singInstalled = Test-ServiceInstalled 'sing-box'
-$subStoreInstalled = Test-ServiceInstalled 'sub-store'
 
 $singArchive = Join-Path $work 'sing-box.zip'
 Download "https://github.com/SagerNet/sing-box/releases/download/v$($versions.SingBox)/sing-box-$($versions.SingBox)-windows-amd64.zip" $singArchive
@@ -170,86 +113,58 @@ $dashboardRoot = Find-WebRoot $dashboardArchive (Join-Path $work 'zashboard')
 
 $winsw = Join-Path $work 'WinSW-x64.exe'
 Download "https://github.com/winsw/winsw/releases/download/v$($versions.WinSW)/WinSW-x64.exe" $winsw
+$stagedYq = Join-Path $work 'yq.exe'
+Download "https://github.com/mikefarah/yq/releases/download/v$($versions.Yq)/yq_windows_amd64.exe" $stagedYq
 
-if (-not $SkipMigration -and -not (Test-Path (Join-Path $root 'local\runtime.json'))) {
-    & (Join-Path $PSScriptRoot 'Migrate-Mihomo.ps1')
+& $stagedSingBox version
+if ($LASTEXITCODE -ne 0) { throw "Downloaded sing-box failed with exit code $LASTEXITCODE" }
+& $stagedNode --version
+if ($LASTEXITCODE -ne 0) { throw "Downloaded Node.js failed with exit code $LASTEXITCODE" }
+& $stagedYq --version
+if ($LASTEXITCODE -ne 0) { throw "Downloaded yq failed with exit code $LASTEXITCODE" }
+& $winsw --version
+if ($LASTEXITCODE -ne 0) { throw "Downloaded WinSW failed with exit code $LASTEXITCODE" }
+
+if (-not $SkipMigration -and -not (Test-Path -LiteralPath (Join-Path $root 'local\runtime.json'))) {
+    & (Join-Path $PSScriptRoot 'Migrate-Mihomo.ps1') -YqPath $stagedYq
 }
-if (-not (Test-Path (Join-Path $root 'local\runtime.json'))) {
+if (-not (Test-Path -LiteralPath (Join-Path $root 'local\runtime.json'))) {
     throw 'Create local/runtime.json from local/runtime.example.json before continuing.'
 }
-$runtime = Get-Content (Join-Path $root 'local\runtime.json') -Raw | ConvertFrom-Json
+
+$singWrapper = Join-Path $root 'sing-box-service.exe'
+$subStoreWrapper = Join-Path $root 'sub-store-service.exe'
+Stop-ServiceAndWait 'sing-box'
+Stop-ServiceAndWait 'sub-store'
 
 Sync-SubStoreServiceXml
-Stop-WinSW $subStoreWrapper 'sub-store' $subStoreInstalled
+Copy-Item $stagedSingBox (Join-Path $root 'runtime\sing-box.exe') -Force
 Copy-Item $stagedNode (Join-Path $root 'runtime\node.exe') -Force
+Copy-Item $stagedYq (Join-Path $root 'runtime\yq.exe') -Force
 Copy-Item $stagedSubStore (Join-Path $root 'sub-store\sub-store.bundle.js') -Force
 Install-WebRoot $frontendRoot (Join-Path $root 'sub-store\frontend')
+Install-WebRoot $dashboardRoot (Join-Path $root 'ui')
+Copy-Item $winsw $singWrapper -Force
 Copy-Item $winsw $subStoreWrapper -Force
-Register-WinSW $subStoreWrapper $subStoreInstalled
-Start-WinSW $subStoreWrapper
-
-& (Join-Path $PSScriptRoot 'Initialize-SubStore.ps1')
-
-$singBackup = Join-Path $work 'sing-box-backup'
-if (Test-Path $singBackup) { Remove-Item $singBackup -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $singBackup | Out-Null
-$backupFiles = [ordered]@{
-    'sing-box.exe' = (Join-Path $root 'runtime\sing-box.exe')
-    'config.json' = (Join-Path $root 'config.json')
-    'sing-box-service.exe' = $singWrapper
-}
-foreach ($entry in $backupFiles.GetEnumerator()) {
-    if (Test-Path -LiteralPath $entry.Value -PathType Leaf) {
-        Copy-Item -LiteralPath $entry.Value -Destination (Join-Path $singBackup $entry.Key) -Force
+Register-WinSW $singWrapper 'sing-box'
+Register-WinSW $subStoreWrapper 'sub-store'
+foreach ($serviceName in @('sing-box', 'sub-store')) {
+    Set-Service -Name $serviceName -StartupType Manual
+    $service = Get-Service -Name $serviceName
+    $service.Refresh()
+    if ($service.Status -ne 'Stopped') {
+        throw "Service '$serviceName' unexpectedly entered state '$($service.Status)'."
     }
 }
 
-$singRegisteredDuringInstall = $false
-try {
-    & (Join-Path $PSScriptRoot 'Update-Config.ps1') -NoRestart -CorePath $stagedSingBox
-    Stop-WinSW $singWrapper 'sing-box' $singInstalled
-    Assert-DnsPortAvailable $settings.DnsListenPort
-    if ($settings.NativeApiEnabled) { Assert-PortAvailable $settings.NativeApiPort }
-    if ($settings.ClashApiEnabled) { Assert-PortAvailable $settings.ClashApiPort }
-    Assert-PortAvailable $settings.MixedPort
+& (Join-Path $root 'runtime\sing-box.exe') version
+if ($LASTEXITCODE -ne 0) { throw "Installed sing-box failed with exit code $LASTEXITCODE" }
+& (Join-Path $root 'runtime\yq.exe') --version
+if ($LASTEXITCODE -ne 0) { throw "Installed yq failed with exit code $LASTEXITCODE" }
 
-    Copy-Item $stagedSingBox (Join-Path $root 'runtime\sing-box.exe') -Force
-    Install-WebRoot $dashboardRoot (Join-Path $root 'ui')
-    Copy-Item $winsw $singWrapper -Force
-    Register-WinSW $singWrapper $singInstalled
-    $singRegisteredDuringInstall = -not $singInstalled
-    Start-WinSW $singWrapper
-    Wait-SingBoxHealthy
-} catch {
-    $upgradeError = $_
-    Write-Warning "sing-box upgrade failed: $($upgradeError.Exception.Message)"
-    if (Test-ServiceInstalled 'sing-box') {
-        & $singWrapper stopwait 2>$null
-    }
-    if ($singRegisteredDuringInstall) {
-        & $singWrapper uninstall 2>$null
-    }
-    foreach ($entry in $backupFiles.GetEnumerator()) {
-        $backupPath = Join-Path $singBackup $entry.Key
-        if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
-            Copy-Item -LiteralPath $backupPath -Destination $entry.Value -Force
-        } elseif (-not $singInstalled) {
-            Remove-Item -LiteralPath $entry.Value -Force -ErrorAction SilentlyContinue
-        }
-    }
-    if ($singInstalled -and
-        (Test-Path -LiteralPath (Join-Path $root 'runtime\sing-box.exe') -PathType Leaf) -and
-        (Test-Path -LiteralPath (Join-Path $root 'config.json') -PathType Leaf)) {
-        Start-WinSW $singWrapper
-    }
-    throw $upgradeError
-}
-
-Write-Host 'Installation complete.'
-Write-Host "Zashboard: http://$($settings.ClashApiListen):$($settings.ClashApiPort)/ui/"
-if ($settings.NativeApiEnabled) {
-    Write-Host "sing-box native API (gRPC/gRPC-Web): http://$($settings.NativeApiListen):$($settings.NativeApiPort)/"
-}
-Write-Host "DNS for local virtual machines: $($settings.DnsListenAddresses -join ', '):$($settings.DnsListenPort) (TCP/UDP)"
-Write-Host "Sub-Store: http://$($settings.SubStoreListen):$($settings.SubStoreFrontendPort)/"
-
+Write-Host 'Installation complete. Both services are installed and stopped.'
+Write-Host 'Start Sub-Store, initialize subscriptions, build config.json, then start sing-box:'
+Write-Host '  .\sub-store-service.exe start'
+Write-Host '  pwsh -File .\scripts\Initialize-SubStore.ps1'
+Write-Host '  pwsh -File .\scripts\Update-Config.ps1'
+Write-Host '  .\sing-box-service.exe start'

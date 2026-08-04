@@ -1,0 +1,755 @@
+$schema: https://raw.githubusercontent.com/SagerNet/sing-box/refs/heads/testing/docs/schema.json
+
+log:
+  level: info
+  timestamp: true
+
+dns:
+  servers:
+    - type: local
+      tag: System-DNS
+    - type: udp
+      tag: PKU-DNS
+      server: 210.2.4.8
+      server_port: 53
+    - type: udp
+      tag: CN-DNS-Bootstrap-114-A
+      server: 114.114.114.110
+      server_port: 53
+    - type: udp
+      tag: CN-DNS-Bootstrap-114-B
+      server: 114.114.115.119
+      server_port: 53
+    - type: tls
+      tag: CN-DNS-Ali
+      server: dns.alidns.com
+      server_port: 853
+      domain_resolver: CN-DNS-Bootstrap-114-A
+    - type: tls
+      tag: CN-DNS-Tencent
+      server: dot.pub
+      server_port: 853
+      domain_resolver: CN-DNS-Bootstrap-114-A
+    - type: tls
+      tag: CN-DNS-360
+      server: dot.360.cn
+      server_port: 853
+      domain_resolver: CN-DNS-Bootstrap-114-B
+    - type: https
+      tag: Global-DNS-Recipes
+      server: v.recipes
+      server_port: 443
+      path: /dns-query
+      domain_resolver: CN-DNS-Ali
+    - type: https
+      tag: Global-DNS-Cloudflare-Gateway
+      server: iloveyou.cloudflare-gateway.com
+      server_port: 443
+      path: /dns-query
+      domain_resolver: CN-DNS-Ali
+    - type: https
+      tag: Global-DNS-Google
+      server: dns.google
+      server_port: 443
+      path: /dns-query
+      detour: 节点选择
+      domain_resolver: CN-DNS-Ali
+    - type: fakeip
+      tag: FakeIP-DNS
+      inet4_range: 198.18.0.0/15
+      inet6_range: fd18:1111:1111::/64
+  rules:
+    - domain: qmazon.local
+      action: predefined
+      answer:
+        - qmazon.local. IN A 10.129.243.35
+        - qmazon.local. IN AAAA 2001:da8:201:2940:f816:3eff:fe6c:178
+    - domain_suffix: qmazon.local
+      action: predefined
+      answer:
+        - '*.qmazon.local. IN A 10.129.243.35'
+        - '*.qmazon.local. IN AAAA 2001:da8:201:2940:f816:3eff:fe6c:178'
+    - domain: thechosen.local
+      action: predefined
+      answer:
+        - thechosen.local. IN A 192.168.77.1
+        - thechosen.local. IN AAAA fd00:1234:5678:1::1
+    - domain_suffix: thechosen.local
+      action: predefined
+      answer:
+        - '*.thechosen.local. IN A 192.168.77.1'
+        - '*.thechosen.local. IN AAAA fd00:1234:5678:1::1'
+    - domain: thechosen.internal
+      action: predefined
+      answer:
+        - thechosen.internal. IN A 192.168.77.1
+        - thechosen.internal. IN AAAA fd00:1234:5678:1::1
+    - domain_suffix: thechosen.internal
+      action: predefined
+      answer:
+        - '*.thechosen.internal. IN A 192.168.77.1'
+        - '*.thechosen.internal. IN AAAA fd00:1234:5678:1::1'
+    - domain: windowtop.info
+      action: predefined
+      answer:
+        - windowtop.info. IN A 0.0.0.0
+        - 'windowtop.info. IN AAAA ::'
+    - domain_suffix: windowtop.info
+      action: predefined
+      answer:
+        - '*.windowtop.info. IN A 0.0.0.0'
+        - '*.windowtop.info. IN AAAA ::'
+    - domain_suffix:
+        - pku.edu.cn
+        - openjudge.cn
+      action: route
+      server: PKU-DNS
+    - domain_suffix:
+        - edu.cn
+        - sukaka.ai6.me
+        - luogu.com.cn
+        - qq.com
+        - servicewechat.com
+        - wechat.com
+        - weixin.com
+        - weixinbridge.com
+        - qlogo.cn
+        - qpic.cn
+        - gtimg.cn
+        - gtimg.com
+        - wxaurl.cn
+        - wxgateway.com
+        - wxlivecdn.com
+        - wxmpurl.cn
+      query_type: AAAA
+      action: predefined
+      answer: []
+    - domain_suffix:
+        - edu.cn
+        - sukaka.ai6.me
+        - luogu.com.cn
+        - qq.com
+        - servicewechat.com
+        - wechat.com
+        - weixin.com
+        - weixinbridge.com
+        - qlogo.cn
+        - qpic.cn
+        - gtimg.cn
+        - gtimg.com
+      action: route
+      server: CN-DNS-Ali
+      client_subnet: 115.27.215.1/24
+    - rule_set:
+        - private
+        - fakeip-filter
+        - trackerslist
+        - games-cn
+        - microsoft-cn
+        - apple-cn
+        - google-cn
+      action: route
+      server: CN-DNS-Ali
+      client_subnet: 115.27.215.1/24
+    - query_type:
+        - A
+        - AAAA
+      action: route
+      server: FakeIP-DNS
+    - clash_mode: direct
+      action: route
+      server: CN-DNS-Ali
+      client_subnet: 115.27.215.1/24
+    - clash_mode: global
+      action: route
+      server: Global-DNS-Recipes
+      client_subnet: 115.27.215.1/24
+    - rule_set: cn
+      action: route
+      server: CN-DNS-Ali
+      client_subnet: 115.27.215.1/24
+    - rule_set: proxy
+      action: route
+      server: Global-DNS-Recipes
+      client_subnet: 115.27.215.1/24
+  final: Global-DNS-Recipes
+  strategy: prefer_ipv6
+  reverse_mapping: true
+  cache_capacity: 2048
+
+inbounds:
+  - type: tun
+    tag: tun-in
+    interface_name: Meta
+    mtu: 1480
+    address:
+      - 172.18.0.1/30
+      - fdfe:dcba:9876::1/126
+    dns_mode: hijack
+    dns_address:
+      - 172.18.0.2
+      - fdfe:dcba:9876::2
+    stack: mixed
+    auto_route: false
+    strict_route: false
+    include_interface:
+      - vEthernet (E1)
+      - 以太网
+      - WLAN
+    route_exclude_address:
+      - 127.0.0.0/8
+      - ::1/128
+  - type: mixed
+    tag: mixed-in-v4
+    listen: 0.0.0.0
+    listen_port: 30890
+    users:
+      - Username: __RUNTIME_MIXED_USERS__
+        Password: __RUNTIME_MIXED_USERS__
+  - type: mixed
+    tag: mixed-in-v6
+    listen: '::'
+    listen_port: 30890
+    users:
+      - Username: __RUNTIME_MIXED_USERS__
+        Password: __RUNTIME_MIXED_USERS__
+  - type: direct
+    tag: dns-in-v4
+    listen: 0.0.0.0
+    listen_port: 53
+    reuse_addr: true
+  - type: direct
+    tag: dns-in-v6
+    listen: '::'
+    listen_port: 53
+    reuse_addr: true
+
+outbounds:
+  - type: selector
+    tag: 节点选择
+    outbounds:
+      - 香港节点
+      - 新加坡节点
+      - 日本节点
+      - 台湾节点
+      - 美国节点
+      - 欧洲节点
+      - 全部节点
+      - 自建/家宽节点
+      - 故障转移
+    interrupt_exist_connections: true
+  - type: selector
+    tag: 🎓 北京大学
+    outbounds:
+      - 🟢 直连
+      - __CUSTOM_NODES__
+    interrupt_exist_connections: true
+
+  - type: selector
+    tag: 网络测试
+    outbounds: [🟢 直连, 节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: 游戏平台
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: AI
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点, __ALL_NODES__]
+  - type: selector
+    tag: 游戏服务
+    outbounds: [🟢 直连, 节点选择]
+  - type: selector
+    tag: Microsoft
+    outbounds: [🟢 直连, 节点选择]
+  - type: selector
+    tag: Google
+    outbounds: [🟢 直连, 节点选择]
+  - type: selector
+    tag: Apple
+    outbounds: [🟢 直连, 节点选择]
+  - type: selector
+    tag: NETFLIX
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: DisneyPlus
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: HBO
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: Primevideo
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: AppleTV
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: YouTube
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: TikTok
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: 哔哩哔哩
+    outbounds: [🟢 直连, 节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点]
+  - type: selector
+    tag: Spotify
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: Global-Media
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点, __ALL_NODES__]
+  - type: selector
+    tag: Telegram
+    outbounds: [节点选择, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点]
+  - type: selector
+    tag: 全球直连
+    outbounds: [🟢 直连, 节点选择]
+  - type: selector
+    tag: 广告拦截
+    outbounds: [🚫 拒绝, 🟢 直连]
+  - type: selector
+    tag: Final
+    outbounds: [节点选择, 🟢 直连, 香港节点, 新加坡节点, 日本节点, 台湾节点, 美国节点, __ALL_NODES__]
+
+  - type: selector
+    tag: 自建/家宽节点
+    outbounds: [__CUSTOM_NODES__]
+  - type: selector
+    tag: 全部节点
+    outbounds: [__ALL_NODES__]
+  - type: selector
+    tag: 香港节点
+    outbounds: [香港自动, __HK_NODES__]
+  - type: selector
+    tag: 新加坡节点
+    outbounds: [新加坡自动, __SG_NODES__]
+  - type: selector
+    tag: 日本节点
+    outbounds: [日本自动, __JP_NODES__]
+  - type: selector
+    tag: 台湾节点
+    outbounds: [台湾自动, __TW_NODES__]
+  - type: selector
+    tag: 美国节点
+    outbounds: [美国自动, __US_NODES__]
+  - type: selector
+    tag: 欧洲节点
+    outbounds: [欧洲自动, __EU_NODES__]
+  - type: urltest
+    tag: 故障转移
+    outbounds: [__ALL_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 100
+  - type: urltest
+    tag: 香港自动
+    outbounds: [__HK_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 20
+  - type: urltest
+    tag: 新加坡自动
+    outbounds: [__SG_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 20
+  - type: urltest
+    tag: 日本自动
+    outbounds: [__JP_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 20
+  - type: urltest
+    tag: 台湾自动
+    outbounds: [__TW_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 20
+  - type: urltest
+    tag: 美国自动
+    outbounds: [__US_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 20
+  - type: urltest
+    tag: 欧洲自动
+    outbounds: [__EU_NODES__]
+    url: https://www.gstatic.com/generate_204
+    interval: 5m
+    tolerance: 20
+
+  - type: direct
+    tag: __INSERT_NODES__
+  - type: direct
+    tag: 🟢 直连
+  - type: block
+    tag: 🚫 拒绝
+
+route:
+  rules:
+    - inbound: tun-in
+      action: sniff
+    - inbound:
+        - dns-in-v4
+        - dns-in-v6
+      action: hijack-dns
+    - protocol: dns
+      action: hijack-dns
+    - process_name:
+        - WeChat.exe
+        - WeChatAppEx.exe
+        - Weixin.exe
+        - WeixinAppEx.exe
+      action: route
+      outbound: 全球直连
+    - domain_suffix:
+        - sukaka.ai6.me
+        - pku7day.com
+        - course.huh.moe
+        - cn.bing.com
+        - v.recipes
+        - h-e.top
+        - pku.bohrium.com
+        - cetaceang.qzz.io
+        - vulnhub.com
+        - cpolar.top
+        - redbud.info
+        - 0d000721.ltd
+        - datanodes.to
+        - fuckingfast.co
+        - wataruu.me
+        - x666.me
+        - muyuan.do
+        - hybgzs.com
+        - aiapi.exe.xyz
+        - sharedchat.cc
+        - agentrouter.org
+        - lyclaude.site
+        - download-cdn.jetbrains.com
+        - flypy.cc
+      action: route
+      outbound: 全球直连
+    - domain:
+        - click.redditmail.com
+      domain_suffix:
+        - gcli.ggchan.dev
+        - arena.ai
+      action: route
+      outbound: 节点选择
+    - domain_suffix:
+        - pku.edu.cn
+        - openjudge.cn
+        - qmazon.local
+      action: route
+      outbound: 🎓 北京大学
+    - ip_cidr:
+        - 10.0.0.0/8
+        - 162.105.0.0/16
+        - 115.27.0.0/16
+      action: route
+      outbound: 🎓 北京大学
+    - rule_set: ads
+      action: route
+      outbound: 广告拦截
+    - rule_set: networktest
+      action: route
+      outbound: 网络测试
+    - rule_set: games
+      action: route
+      outbound: 游戏平台
+    - rule_set: ai
+      action: route
+      outbound: AI
+    - rule_set: games-cn
+      action: route
+      outbound: 游戏服务
+    - rule_set: microsoft-cn
+      action: route
+      outbound: Microsoft
+    - rule_set: google-cn
+      action: route
+      outbound: Google
+    - rule_set: apple-cn
+      action: route
+      outbound: Apple
+    - rule_set:
+        - netflix
+        - netflixip
+      action: route
+      outbound: NETFLIX
+    - rule_set: disney
+      action: route
+      outbound: DisneyPlus
+    - rule_set: max
+      action: route
+      outbound: HBO
+    - rule_set: primevideo
+      action: route
+      outbound: Primevideo
+    - rule_set: appletv
+      action: route
+      outbound: AppleTV
+    - rule_set: youtube
+      action: route
+      outbound: YouTube
+    - rule_set: tiktok
+      action: route
+      outbound: TikTok
+    - rule_set: bilibili
+      action: route
+      outbound: 哔哩哔哩
+    - rule_set: spotify
+      action: route
+      outbound: Spotify
+    - rule_set:
+        - media
+        - mediaip
+      action: route
+      outbound: Global-Media
+    - rule_set: telegramip
+      action: route
+      outbound: Telegram
+    - rule_set:
+        - applications
+        - private
+        - privateip
+      action: route
+      outbound: 全球直连
+    - rule_set:
+        - cn
+        - cnip
+      action: route
+      outbound: 全球直连
+    - rule_set:
+        - gfw
+        - proxy
+        - tld-proxy
+      action: route
+      outbound: 节点选择
+  rule_set:
+    - type: remote
+      tag: ads
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/ads.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: ai
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/ai.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: apple-cn
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/apple-cn.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: appletv
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/appletv.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: applications
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/applications.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: bilibili
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/bilibili.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: cn
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/cn.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: cnip
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/cnip.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: disney
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/disney.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: fakeip-filter
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/fakeip-filter.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: games-cn
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/games-cn.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: games
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/games.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: gfw
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/gfw.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: google-cn
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/google-cn.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: max
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/max.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: media
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/media.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: mediaip
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/mediaip.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: microsoft-cn
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/microsoft-cn.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: netflix
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/netflix.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: netflixip
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/netflixip.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: networktest
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/networktest.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: primevideo
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/primevideo.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: private
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/private.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: privateip
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/privateip.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: proxy
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/proxy.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: spotify
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/spotify.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: telegramip
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/telegramip.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: tiktok
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/tiktok.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: tld-proxy
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/tld-proxy.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: trackerslist
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/trackerslist.srs
+      http_client: rule-set-http
+      update_interval: 1d
+    - type: remote
+      tag: youtube
+      format: binary
+      url: https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/youtube.srs
+      http_client: rule-set-http
+      update_interval: 1d
+  final: Final
+  find_process: true
+  auto_detect_interface: true
+  default_domain_resolver:
+    server: System-DNS
+    strategy: prefer_ipv6
+  default_http_client: rule-set-http
+
+http_clients:
+  - tag: rule-set-http
+    detour: 节点选择
+    domain_resolver:
+      server: System-DNS
+      strategy: prefer_ipv6
+
+services:
+  - type: api
+    tag: native-api
+    listen: 127.0.0.1
+    listen_port: 40091
+    secret: __RUNTIME_CLASH_SECRET__
+    access_control_allow_origin:
+      - http://127.0.0.1:40090
+      - http://localhost:40090
+    access_control_allow_private_network: false
+    dashboard: false
+
+experimental:
+  clash_api:
+    external_controller: 127.0.0.1:40090
+    external_ui: ui
+    secret: __RUNTIME_CLASH_SECRET__
+    default_mode: rule
+    access_control_allow_origin:
+      - http://127.0.0.1:40090
+      - http://localhost:40090
+    access_control_allow_private_network: false
+  cache_file:
+    enabled: true
+    path: data/cache.db
+    store_fakeip: true
+    store_dns: true

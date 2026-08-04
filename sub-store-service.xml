@@ -2,6 +2,7 @@
   <id>sub-store</id>
   <name>Sub-Store</name>
   <description>Local subscription manager for sing-box.</description>
+  <startmode>Manual</startmode>
 
   <workingdirectory>%BASE%\sub-store</workingdirectory>
   <executable>%BASE%\runtime\node.exe</executable>
@@ -16,7 +17,7 @@
   <env name="SUB_STORE_CORS_ALLOWED_ORIGINS" value="http://127.0.0.1:40007,http://localhost:40007" />
 
   <serviceaccount>
-    <localSystem />
+    <username>LocalSystem</username>
   </serviceaccount>
 
   <logpath>%BASE%\logs</logpath>

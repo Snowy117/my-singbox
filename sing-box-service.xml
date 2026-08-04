@@ -2,13 +2,14 @@
   <id>sing-box</id>
   <name>sing-box</name>
   <description>This service runs sing-box.</description>
+  <startmode>Manual</startmode>
 
   <workingdirectory>%BASE%</workingdirectory>
   <executable>%BASE%\runtime\sing-box.exe</executable>
   <arguments>run -D "%BASE%\data" -c "%BASE%\config.json"</arguments>
 
   <serviceaccount>
-    <localSystem />
+    <username>LocalSystem</username>
   </serviceaccount>
 
   <poststart>

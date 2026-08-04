@@ -1,106 +1,161 @@
-# Windows sing-box + WinSW + Sub-Store
+# Windows sing-box + Sub-Store
 
-这套目录替代现有的 `WinSW + Mihomo`：
+本目录使用 WinSW 管理 sing-box 与 Sub-Store。配置生成流程只有一条：
 
-- `sing-box-service.exe` / `sing-box-service.xml`：TUN、DNS、路由和 Zashboard。
-- `sub-store-service.exe` / `sub-store-service.xml`：仅监听本机，负责订阅拉取与协议转换。
-- `scripts/Update-Config.ps1`：拉取订阅、套用 Lanlan 模板、本地覆盖、`sing-box check`、原子替换、WinSW 重启。
-- `rules/manual-direct.txt` / `rules/manual-proxy.txt`：最高优先级的手工域名规则。
-- `settings.psd1`：端口、DNS 上游/Fake-IP、PKU 网段、TUN 名称等非敏感设置。
-- `local/runtime.json`：订阅 URL、API 密钥和私有节点；已被 Git 忽略。
+```text
+config.yaml + local/runtime.json 中的节点数据 + Sub-Store 订阅节点
+                              ↓
+                         config.json
+```
+
+固定版本：
+
+- sing-box `1.14.0-beta.5`
+- Sub-Store 前端 `2.29.10`
+- WinSW `3.0.0-alpha.11`（WinSW 当前公开的 3.0 预发布版本）
+- 其余组件版本见 `versions.psd1`
+
+`config.yaml` 是 sing-box 配置的唯一声明式来源。DNS、TUN、inbound、策略组、路由、rule-set、API 和缓存都直接在这个 YAML 文件中修改；PowerShell 不再从远程模板下载配置，也不会重写这些部分。`config.json` 是生成文件，不应手工修改。
+
+sing-box 本身不读取 YAML，因此安装器会下载固定版本的 `yq`。构建脚本先把 YAML 转为 JSON，再使用固定版本的 `sing-box check` 验证候选配置，通过后才原子替换 `config.json`。
+
+## 文件职责
+
+- `config.yaml`：完整、可手工维护的 sing-box YAML 模板。
+- `local/runtime.json`：订阅 URL、节点前缀、代理认证、API 密钥和私有节点；被 Git 忽略。
+- `scripts/Build-Config.ps1`：向模板插入已经转换好的 outbounds/endpoints，并展开节点占位符。
+- `scripts/Update-Config.ps1`：从正在运行的 Sub-Store 获取节点，调用构建脚本，校验并安装 `config.json`；默认不重启服务。
+- `scripts/Migrate-Mihomo.ps1`：用 YAML 解析器读取 `mihomo.yaml`，迁移 provider、认证、API 密钥和支持的本地 VLESS 节点。
+- `scripts/Install.ps1`：下载固定版本、替换程序文件并安装两个服务；不会启动服务，且把启动类型设为手动。
+- `settings.psd1`：只保存 Sub-Store 端口和 post-start 所需的 Windows 部署设置，不保存 sing-box 配置。
+
+## YAML 中的节点占位符
+
+`config.yaml` 必须在 `outbounds` 中保留一个 tag 为 `__INSERT_NODES__` 的条目。构建时该条目会被私有节点和订阅 outbounds 替换；订阅 endpoints 则写入顶层 `endpoints`。
+
+策略组的 `outbounds` 可使用以下占位符：
+
+- `__ALL_NODES__`：全部私有、订阅 outbound 和订阅 endpoint。
+- `__SUBSCRIPTION_NODES__`：全部订阅节点。
+- `__CUSTOM_NODES__`：`local/runtime.json` 中的私有节点。
+- `__HK_NODES__`、`__TW_NODES__`、`__SG_NODES__`、`__JP_NODES__`、`__US_NODES__`、`__EU_NODES__`：按节点 tag 匹配地区。
+
+地区没有匹配节点时会插入 `🟢 直连`，避免生成空 selector/urltest。除此之外，构建脚本不会根据策略组名称猜测或修改配置。
+
+认证和 API 密钥仍放在被 Git 忽略的 `local/runtime.json`。YAML 中的 `__RUNTIME_MIXED_USERS__` 与 `__RUNTIME_CLASH_SECRET__` 是对应的敏感值占位符；它们不是 DNS、TUN 或路由覆盖项。
 
 ## 首次安装
 
-1. 将整个目录复制到最终位置，例如 `C:\Services\sing-box`。安装后不要移动目录。
-2. 关闭并停止 Mihomo 服务，避免端口和 TUN 路由冲突。
-3. 以管理员身份打开 PowerShell 7，执行：
+以管理员身份打开 PowerShell 7，在最终安装目录执行：
 
 ```powershell
 Set-Location C:\Services\sing-box
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1
 ```
 
-安装脚本会从同目录的 `mihomo.yaml` 提取现有订阅、认证、Clash API 密钥和 PKU 节点到 `local/runtime.json`，下载固定版本的 sing-box、Node、Sub-Store、Sub-Store 前端、Zashboard 和 WinSW，然后安装两个服务。
+若 `local/runtime.json` 不存在，安装器默认从同目录且被 Git 忽略的 `mihomo.yaml` 迁移数据，并默认排除 `Weiba` provider。不要迁移时使用：
 
-迁移默认忽略已停用的 `Weiba` provider。需要调整时，可先单独运行
-`scripts\Migrate-Mihomo.ps1 -ExcludeProviders Weiba,OtherProvider`，再执行安装。
+```powershell
+Copy-Item .\local\runtime.example.json .\local\runtime.json
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1 -SkipMigration
+```
 
-若不迁移旧配置，先从 `local/runtime.example.json` 创建 `local/runtime.json`，再使用 `Install.ps1 -SkipMigration`。
+安装结束时 `sing-box` 和 `sub-store` 都处于停止状态，启动类型为手动。首次生成配置需要显式执行：
 
-## 日常使用
+```powershell
+.\sub-store-service.exe start
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Initialize-SubStore.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-Config.ps1
+.\sing-box-service.exe start
+```
 
-- Zashboard / sing-box Clash API：`http://127.0.0.1:40090/ui/`
-- Clash API 状态检查：`GET http://127.0.0.1:40090/version`，使用 `local/runtime.json` 中的 `clash_secret` 作为 Bearer token。
-- sing-box 原生 gRPC/gRPC-Web API：`127.0.0.1:40091`，使用同一个 Bearer token。允许来自 `http://127.0.0.1:40090` 和 `http://localhost:40090` 面板的 CORS 请求。`/daemon.StartedService/GetVersion` 是 gRPC 方法，不能用浏览器普通 GET 请求测试。
-- Sub-Store 前端：`http://127.0.0.1:40007/`
-- Sub-Store 后端：`http://127.0.0.1:40008/`（仅脚本和前端代理访问）
-- 混合代理：分别监听 `0.0.0.0:30890` 和 `[::]:30890`，认证沿用旧配置。
-- DNS：分别监听 `0.0.0.0:53` 和 `[::]:53` 的 UDP/TCP；Windows 防火墙只允许 `LocalSubnet` 访问。DNS inbound 默认开启 `reuse_addr`，允许与 Hyper-V/ICS 的 `SharedAccess` UDP 53 共存。
-- TUN 网卡固定为 `Meta`；服务启动后会对 `Meta` 和 `vEthernet (Network Bridge)` 显式开启 IPv4、IPv6 forwarding。
+`Initialize-SubStore.ps1` 只创建或更新 `local/runtime.json` 中声明的订阅，不启动服务。
 
-修改手工域名后，或需要更新订阅时，以管理员身份执行：
+## 日常调整配置
+
+直接编辑 `config.yaml`，然后在 Sub-Store 已运行时执行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-Config.ps1
 ```
 
-更新失败不会覆盖当前 `config.json`。上一个配置保存在 `work\config.previous.json`。sing-box 在 Windows 上不能通过 Clash API 重载自身，因此更新脚本必须由 WinSW 重启服务；Zashboard 只负责运行时节点选择和连接管理。
-
-若新配置通过校验但 WinSW 重启失败，更新脚本会恢复上一个配置并再次启动服务，然后以错误退出，便于计划任务或监控发现此次更新失败。
-
-## DNS 与 PKU
-
-`pku.edu.cn`、`openjudge.cn` 和 `qmazon.local` 默认使用系统分配的 DNS（sing-box `type: dhcp`，等价于原 Mihomo 的 `system://`）。相关域名和 `10.0.0.0/8`、`162.105.0.0/16`、`115.27.0.0/16` 进入 `🎓 北京大学` 选择器，可在 Zashboard 中选择直连或 PKU 私有节点。
-
-DNS 尽量复刻原 Mihomo 配置：保留两组 114 bootstrap、阿里/腾讯/360 DoT、三组通用 DoH、系统 DNS、本地预定义域名和 Fake-IP。默认查询和代理服务器域名解析策略为 `prefer_ipv6`，对应原 provider 的 `ip-version: ipv6-prefer`；代理服务器 hostname 默认通过 `System-DNS` 的 `local` transport 交给 Windows 系统 resolver，避免本地只有 IPv6 上联时依赖 IPv4 的 DHCP/114 bootstrap。`settings.psd1` 的 `Ipv4PreferredDomains` 对指定域名返回空 AAAA 并使用直连 DNS；`WeChatDomains` 额外覆盖微信核心和图片 CDN，同样抑制 AAAA、使用国内直连 DNS，并强制域名直连，不依赖 TUN 的进程识别。`DirectIpv4OnlyProcesses` 中的微信进程仍会直连，且其 IPv6 连接会收到立即拒绝以便快速回退 IPv4；这不影响其他进程使用 IPv6。Fake-IP 地址段为 `198.18.0.0/15` 与 `fd18:1111:1111::/64`。`local/dns-hosts.json` 中每个域名的根域及所有层级子域都会返回同一组预定义 A/AAAA 地址；这些规则、系统 DNS、私有域名和 IPv4 特例优先于 Fake-IP。其他 A/AAAA 查询返回 Fake-IP；非地址记录再按国内/国外规则选择上游。`settings.psd1` 的 `DirectDnsServer`/`RemoteDnsServer` 决定当前主用服务器，`ProxyServerDnsServer` 决定节点入口域名解析；其他服务器作为可手工切换的备用项。sing-box 不支持 Mihomo 式 DNS fallback/balancer，因此不能在单条规则中自动按顺序切换多个 DNS。
-
-更新微信规则后，应完全退出微信及其子进程，再刷新 Windows DNS 缓存并重新启动微信：
+脚本会更新节点并生成、校验和安装 `config.json`，但不会重启正在运行的 sing-box。确认后可手动执行：
 
 ```powershell
-Get-Process WeChat,WeChatAppEx,Weixin,WeixinAppEx -ErrorAction SilentlyContinue | Stop-Process -Force
-Clear-DnsClientCache
-Resolve-DnsName qlogo.cn -Type AAAA -Server 127.0.0.1
-Resolve-DnsName qlogo.cn -Type A -Server 127.0.0.1
+.\sing-box-service.exe restart
 ```
 
-AAAA 查询预期为无答案，A 查询预期返回国内 DNS 的真实 IPv4，而不是 Fake-IP。若更新并重启服务后仍读到旧答案，可停止 sing-box，先备份再删除 `data\cache.db`，然后启动服务；这会清除持久化 DNS/Fake-IP 缓存，也可能重置部分运行时选择。`rules/manual-direct.txt` 和 `rules/manual-proxy.txt` 的优先级高于内置微信规则，排障时不要在 `manual-proxy.txt` 中加入微信域名。
-
-当前固定使用 sing-box `1.14.0-alpha.45`。端口 `40090` 仍是供 Zashboard 使用的 Clash REST API；端口 `40091` 是 `services` 中的原生 sing-box gRPC/gRPC-Web API。`/daemon.StartedService/GetVersion` 只存在于后者，调用方必须发送合法的 gRPC 或 gRPC-Web POST、protobuf 帧及 `authorization: Bearer <secret>` 元数据；普通浏览器 GET 返回 404 不代表 API 未开启。
-
-## IPv6 与虚拟机
-
-配置显式为 `Meta` 安装 IPv4 和 IPv6 默认路由，并为 TUN 设置双栈地址及双栈 DNS 地址。代理节点的服务器域名优先解析为 IPv6，因此在本地只有 IPv6 上联时仍可优先通过 IPv6 连接节点；目标网站的 IPv6 连接则由所选节点建立。两者是不同链路。
-
-升级现有安装时，以管理员身份重新运行 `Install.ps1`，不能只运行 `Update-Config.ps1`，因为前者才会下载并替换 1.14 核心：
+明确希望构建成功后自动重启时，使用可选开关：
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Update-Config.ps1 -Restart
 ```
 
-启动后检查主机 IPv6 路由和双栈 forwarding：
+`-Restart` 模式保留回滚：若 WinSW 重启失败，会恢复 `work\config.previous.json` 并尝试重新启动旧配置。默认模式不会触碰服务状态。
+
+已经有节点 JSON 时，可绕过 Sub-Store 单独测试模板：
 
 ```powershell
-Get-NetRoute -InterfaceAlias Meta -AddressFamily IPv6
-Get-NetIPInterface -InterfaceAlias Meta,'vEthernet (Network Bridge)' |
-  Select-Object InterfaceAlias,AddressFamily,Forwarding,ConnectionState
-Test-NetConnection -ComputerName api6.ipify.org -Port 443
+pwsh -NoProfile -File .\scripts\Build-Config.ps1 `
+  -NodesPath .\work\nodes.json `
+  -OutputPath .\work\config.candidate.json
 ```
 
-虚拟机将 DNS 服务器设为 Windows 主机在 VM 网络上的 IPv4 地址，而不是 `127.0.0.1`。防火墙规则仅绑定 `settings.psd1` 的 `DnsFirewallInterfaceAlias`（默认 `vEthernet (Network Bridge)`），不会向物理 LAN/WLAN 开放。可从虚拟机分别执行 `nslookup -type=A example.com <主机地址>` 和 `nslookup -type=AAAA example.com <主机地址>`；预期分别得到 `198.18.0.0/15` 和 `fd18:1111:1111::/64` 中的 Fake-IP。若服务无法启动，先以管理员身份运行 `Get-NetUDPEndpoint -LocalPort 53` 和 `Get-NetTCPConnection -LocalPort 53`，确认没有其他 DNS 服务占用端口。
+节点文件结构为：
 
-Hyper-V Default Switch 或 Internet Connection Sharing 会由 `svchost.exe` 中的 `SharedAccess` 服务占用 UDP 53。Mihomo 会为 DNS UDP socket 设置 `SO_REUSEADDR`，且单独的 UDP DNS listener 启动失败不会终止整个核心；TUN `dns-hijack` 仍可能令查询表现正常。sing-box inbound 默认不复用地址，而且 UDP bind 失败会中止服务，因此本项目显式设置 `reuse_addr = true`。安装器仅对白名单服务 `SharedAccess` 的 UDP 53 冲突放行；TCP 53或其他进程占用仍会中止安装。Windows 对共享 UDP 端口的数据报分发不提供确定性，部署后必须从虚拟机验证实际应答来自 sing-box；若结果不稳定，应将 `DnsListen` 改成 Hyper-V 主机侧的具体 IPv4 地址，或停用 ICS 后由 sing-box 独占 53。
+```json
+{
+  "outbounds": [],
+  "endpoints": []
+}
+```
 
-仅开启 Windows forwarding 不会自动给 Hyper-V 虚拟机分配 IPv6。若虚拟机本身也需要原生 IPv6 地址和默认路由，必须在 VM 侧使用独立于 TUN `/126` 的 IPv6 前缀（通常 `/64`），将主机 bridge 地址设为网关，并静态配置或额外提供 Router Advertisement；不要把 `fdfe:dcba:9876::/126` 直接复用到 VM 网段。
+## Schema 与 rule-set
 
-修改 `settings.psd1` 的 DNS 标签、Fake-IP 段或 `EducationDomains`/`EducationCidrs` 后运行更新脚本即可。修改 Sub-Store 端口后需重新运行 `Install.ps1`，安装器会同步 WinSW XML。
+`config.yaml` 的 `$schema` 指向：
 
-## 服务命令
+```text
+https://raw.githubusercontent.com/SagerNet/sing-box/refs/heads/testing/docs/schema.json
+```
+
+该 schema 与 `v1.14.0-beta.5` 仓库中的 schema 当前完全一致。配置使用 1.14 的显式 DNS server 类型、`domain_resolver`、HTTP client、组合 TUN 地址字段、顶层 `services` 和独立的 `experimental.cache_file`，不再使用旧模板中的 `download_detour`、旧 DNS transport 写法或已移除字段。
+
+分流统一使用 DustinWin 的当前 sing-box SRS 发布通道：
+
+```text
+https://github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/<name>.srs
+```
+
+模板保留了当前 `mihomo.yaml` 的主要选择逻辑、地区节点组、PKU 规则、直连/代理例外、DNS 上游、Fake-IP 和 TUN 接口设置。DustinWin 的规则集比原 Mihomo provider 粗：例如提供聚合的 `proxy`、`media`、`games` 和 `ai`，但没有独立的 GitHub、Meta、Wise、PayPal、LINE 等集合。因此这些流量由聚合集合接管，无法继续保留每个服务的独立规则命中；需要更细策略时，可以直接在 `config.yaml` 中添加 rule-set、selector 和 route rule，脚本不会覆盖。
+
+sing-box 没有 Mihomo 的有序 `fallback` outbound。模板把 `故障转移` 保留为 `urltest`，它会在全部节点中选择可用且延迟较低的节点，不保证按订阅顺序选择第一个健康节点；该组位于 `节点选择` 的末尾，首次启动仍优先使用与 `mihomo.yaml` 一致的香港节点组。
+
+## 服务与端口
+
+模板默认提供：
+
+- Zashboard / Clash API：`http://127.0.0.1:40090/ui/`
+- sing-box 原生 gRPC/gRPC-Web API：`127.0.0.1:40091`
+- Sub-Store 前端：`http://127.0.0.1:40007/`
+- Sub-Store 后端：`http://127.0.0.1:40008/`
+- Mixed inbound：`0.0.0.0:30890` 和 `[::]:30890`
+- DNS：IPv4/IPv6 TCP 与 UDP `53`
+- TUN：`Meta`
+
+这些 sing-box 端口都应在 `config.yaml` 中调整。TUN 有意设置为 `auto_route: false` 与 `strict_route: false`：服务只创建 TUN，不替 Windows 自动安装默认路由，路由由系统侧手工管理。Sub-Store 端口在 `settings.psd1` 中调整，随后重新运行安装器以同步 WinSW XML。
+
+服务命令：
 
 ```powershell
 .\sing-box-service.exe status
+.\sing-box-service.exe start
+.\sing-box-service.exe stop
 .\sing-box-service.exe restart
+
 .\sub-store-service.exe status
+.\sub-store-service.exe start
+.\sub-store-service.exe stop
 .\sub-store-service.exe restart
 ```
 
-卸载时先运行两个服务各自的 `stop`，再运行 `uninstall`。不要同时启动旧 Mihomo 服务。
+服务启动后的 `poststart.ps1` 会从最终 `config.json` 读取 TUN interface 和 DNS inbound 端口，再设置 Windows forwarding 与防火墙规则，因此修改 YAML 中的 TUN 名称或 DNS 端口时不需要同步修改 PowerShell 配置。WinSW 会把该钩子的输出与错误分别写入 `logs\poststart.out.log` 和 `logs\poststart.err.log`；钩子失败不会把已经启动的 sing-box 主进程改为停止状态。

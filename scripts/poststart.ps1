@@ -2,44 +2,52 @@ $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $settings = Import-PowerShellDataFile (Join-Path $root 'settings.psd1')
-$tunInterface = $settings.TunInterface
+$config = Get-Content -LiteralPath (Join-Path $root 'config.json') -Raw | ConvertFrom-Json
 $bridgeInterface = $settings.DnsFirewallInterfaceAlias
-$deadline = (Get-Date).AddSeconds(60)
 
-do {
-    Start-Sleep -Milliseconds 500
-    $tun = Get-NetIPInterface -InterfaceAlias $tunInterface -ErrorAction SilentlyContinue
-} while (-not $tun -and (Get-Date) -lt $deadline)
-
-if (-not $tun) {
-    Write-Host "[PostStart] Interface '$tunInterface' not found within the timeout period."
-    exit 1
+$tunInterfaces = @(
+    $config.inbounds |
+        Where-Object { $_.type -eq 'tun' -and -not [string]::IsNullOrWhiteSpace([string]$_.interface_name) } |
+        ForEach-Object interface_name |
+        Select-Object -Unique
+)
+foreach ($tunInterface in $tunInterfaces) {
+    $deadline = (Get-Date).AddSeconds($settings.PostStartTunWaitSeconds)
+    do {
+        Start-Sleep -Milliseconds 500
+        $tun = Get-NetIPInterface -InterfaceAlias $tunInterface -ErrorAction SilentlyContinue
+    } while (-not $tun -and (Get-Date) -lt $deadline)
+    if (-not $tun) { throw "Interface '$tunInterface' was not found before the timeout." }
+    foreach ($family in @('IPv4', 'IPv6')) {
+        Set-NetIPInterface -Forwarding Enabled -InterfaceAlias $tunInterface -AddressFamily $family
+    }
+    Write-Host "[PostStart] Enabled IPv4 and IPv6 forwarding on '$tunInterface'."
 }
-
-foreach ($family in @('IPv4', 'IPv6')) {
-    Set-NetIPInterface -Forwarding Enabled -InterfaceAlias $tunInterface -AddressFamily $family
-}
-Write-Host "[PostStart] Enabled IPv4 and IPv6 forwarding on interface '$tunInterface'."
 
 $bridge = Get-NetIPInterface -InterfaceAlias $bridgeInterface -ErrorAction SilentlyContinue
 if ($bridge) {
     foreach ($family in @('IPv4', 'IPv6')) {
         Set-NetIPInterface -Forwarding Enabled -InterfaceAlias $bridgeInterface -AddressFamily $family
     }
-    Write-Host "[PostStart] Enabled IPv4 and IPv6 forwarding on interface '$bridgeInterface'."
-} else {
-    Write-Host "[PostStart] Interface '$bridgeInterface' not found."
+    Write-Host "[PostStart] Enabled IPv4 and IPv6 forwarding on '$bridgeInterface'."
 }
 
-foreach ($protocol in @('TCP', 'UDP')) {
-    $ruleName = "sing-box DNS ($protocol)"
-    Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue |
-        Remove-NetFirewallRule -ErrorAction SilentlyContinue
-    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow `
-        -Protocol $protocol -LocalPort $settings.DnsListenPort `
-        -RemoteAddress $settings.DnsFirewallRemoteAddress `
-        -InterfaceAlias $settings.DnsFirewallInterfaceAlias `
-        -Program (Join-Path $root 'runtime\sing-box.exe') | Out-Null
+$dnsPorts = @(
+    $config.inbounds |
+        Where-Object { $settings.DnsInboundTags -contains $_.tag } |
+        ForEach-Object listen_port |
+        Select-Object -Unique
+)
+Get-NetFirewallRule -DisplayName 'sing-box DNS*' -ErrorAction SilentlyContinue |
+    Remove-NetFirewallRule -ErrorAction SilentlyContinue
+foreach ($port in $dnsPorts) {
+    foreach ($protocol in @('TCP', 'UDP')) {
+        $ruleName = "sing-box DNS $port ($protocol)"
+        New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow `
+            -Protocol $protocol -LocalPort $port `
+            -RemoteAddress $settings.DnsFirewallRemoteAddress `
+            -InterfaceAlias $bridgeInterface `
+            -Program (Join-Path $root 'runtime\sing-box.exe') | Out-Null
+    }
+    Write-Host "[PostStart] Allowed TCP and UDP DNS on port $port from '$($settings.DnsFirewallRemoteAddress)' via '$bridgeInterface'."
 }
-Write-Host "[PostStart] Allowed TCP and UDP DNS from '$($settings.DnsFirewallRemoteAddress)' on '$($settings.DnsFirewallInterfaceAlias)'."
-
