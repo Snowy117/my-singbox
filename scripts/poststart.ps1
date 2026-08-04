@@ -51,3 +51,18 @@ foreach ($port in $dnsPorts) {
     }
     Write-Host "[PostStart] Allowed TCP and UDP DNS on port $port from '$($settings.DnsFirewallRemoteAddress)' via '$bridgeInterface'."
 }
+
+New-NetRoute -DestinationPrefix "198.18.0.0/15" `
+             -InterfaceAlias "Meta" `
+             -NextHop "0.0.0.0" `
+             -RouteMetric 1 `
+             -AddressFamily IPv4 `
+             -PolicyStore ActiveStore
+New-NetRoute -DestinationPrefix "fd18:1111:1111::/64" `
+             -InterfaceAlias "Meta" `
+             -NextHop "::" `
+             -RouteMetric 1 `
+             -AddressFamily IPv6 `
+             -PolicyStore ActiveStore
+Write-Host "[PostStart] Route created."
+

@@ -69,16 +69,6 @@ dns:
       answer:
         - '*.qmazon.local. IN A 10.129.243.35'
         - '*.qmazon.local. IN AAAA 2001:da8:201:2940:f816:3eff:fe6c:178'
-    - domain: thechosen.local
-      action: predefined
-      answer:
-        - thechosen.local. IN A 192.168.77.1
-        - thechosen.local. IN AAAA fd00:1234:5678:1::1
-    - domain_suffix: thechosen.local
-      action: predefined
-      answer:
-        - '*.thechosen.local. IN A 192.168.77.1'
-        - '*.thechosen.local. IN AAAA fd00:1234:5678:1::1'
     - domain: thechosen.internal
       action: predefined
       answer:
@@ -99,6 +89,13 @@ dns:
       answer:
         - '*.windowtop.info. IN A 0.0.0.0'
         - '*.windowtop.info. IN AAAA ::'
+    - domain_suffix: cloudflare-gateway.com
+      action: predefined
+      answer:
+        - '*.cloudflare-gateway.com. IN A 162.159.36.20'
+        - '*.cloudflare-gateway.com. IN A 162.159.36.5'
+        - '*.cloudflare-gateway.com. IN AAAA 2606:4700:54::a29f:2407'
+        - '*.cloudflare-gateway.com. IN AAAA 2606:4700:5c::a29f:2e07'
     - domain_suffix:
         - pku.edu.cn
         - openjudge.cn
@@ -172,7 +169,7 @@ dns:
       action: route
       server: Global-DNS-Recipes
       client_subnet: 115.27.215.1/24
-  final: Global-DNS-Recipes
+  final: Global-DNS-Cloudflare-Gateway
   strategy: prefer_ipv6
   reverse_mapping: true
   cache_capacity: 2048
@@ -183,12 +180,12 @@ inbounds:
     interface_name: Meta
     mtu: 1480
     address:
-      - 172.18.0.1/30
-      - fdfe:dcba:9876::1/126
+      - 198.18.0.1/30
+      - fd18:1111:1111::1/126
     dns_mode: hijack
     dns_address:
-      - 172.18.0.2
-      - fdfe:dcba:9876::2
+      - 198.18.0.2
+      - fd18:1111:1111::2
     stack: mixed
     auto_route: false
     strict_route: false
@@ -385,7 +382,10 @@ outbounds:
 
 route:
   rules:
-    - inbound: tun-in
+    - inbound: 
+        - tun-in
+        - mixed-in-v4
+        - mixed-in-v6
       action: sniff
     - inbound:
         - dns-in-v4
@@ -715,7 +715,7 @@ route:
   find_process: true
   auto_detect_interface: true
   default_domain_resolver:
-    server: System-DNS
+    server: CN-DNS-Bootstrap-114-A
     strategy: prefer_ipv6
   default_http_client: rule-set-http
 
@@ -723,7 +723,7 @@ http_clients:
   - tag: rule-set-http
     detour: 节点选择
     domain_resolver:
-      server: System-DNS
+      server: Global-DNS-Cloudflare-Gateway
       strategy: prefer_ipv6
 
 services:
@@ -750,6 +750,6 @@ experimental:
     access_control_allow_private_network: false
   cache_file:
     enabled: true
-    path: data/cache.db
+    path: cache.db
     store_fakeip: true
     store_dns: true
