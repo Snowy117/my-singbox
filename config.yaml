@@ -60,40 +60,75 @@ dns:
       inet6_range: fd18:1111:1111::/64
   rules:
     - domain: qmazon.local
+      query_type: A
       action: predefined
       answer:
         - qmazon.local. IN A 10.129.243.35
+    - domain: qmazon.local
+      query_type: AAAA
+      action: predefined
+      answer:
         - qmazon.local. IN AAAA 2001:da8:201:2940:f816:3eff:fe6c:178
     - domain_suffix: qmazon.local
+      query_type: A
       action: predefined
       answer:
         - '*.qmazon.local. IN A 10.129.243.35'
+    - domain_suffix: qmazon.local
+      query_type: AAAA
+      action: predefined
+      answer:
         - '*.qmazon.local. IN AAAA 2001:da8:201:2940:f816:3eff:fe6c:178'
     - domain: thechosen.internal
+      query_type: A
       action: predefined
       answer:
         - thechosen.internal. IN A 192.168.77.1
+    - domain: thechosen.internal
+      query_type: AAAA
+      action: predefined
+      answer:
         - thechosen.internal. IN AAAA fd00:1234:5678:1::1
     - domain_suffix: thechosen.internal
+      query_type: A
       action: predefined
       answer:
         - '*.thechosen.internal. IN A 192.168.77.1'
+    - domain_suffix: thechosen.internal
+      query_type: AAAA
+      action: predefined
+      answer:
         - '*.thechosen.internal. IN AAAA fd00:1234:5678:1::1'
     - domain: windowtop.info
+      query_type: A
       action: predefined
       answer:
         - windowtop.info. IN A 0.0.0.0
+    - domain: windowtop.info
+      query_type: AAAA
+      action: predefined
+      answer:
         - 'windowtop.info. IN AAAA ::'
     - domain_suffix: windowtop.info
+      query_type: A
       action: predefined
       answer:
         - '*.windowtop.info. IN A 0.0.0.0'
+    - domain_suffix: windowtop.info
+      query_type: AAAA
+      action: predefined
+      answer:
         - '*.windowtop.info. IN AAAA ::'
     - domain_suffix: cloudflare-gateway.com
+      query_type: A
       action: predefined
       answer:
         - '*.cloudflare-gateway.com. IN A 162.159.36.20'
         - '*.cloudflare-gateway.com. IN A 162.159.36.5'
+    - domain_suffix: cloudflare-gateway.com
+      query_type: AAAA
+      action: predefined
+      answer:
         - '*.cloudflare-gateway.com. IN AAAA 2606:4700:54::a29f:2407'
         - '*.cloudflare-gateway.com. IN AAAA 2606:4700:5c::a29f:2e07'
     - domain_suffix:
