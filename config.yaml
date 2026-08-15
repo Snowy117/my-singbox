@@ -36,16 +36,11 @@ dns:
       server_port: 853
       domain_resolver: CN-DNS-Bootstrap-114-B
     - type: https
-      tag: Global-DNS-Recipes
-      server: v.recipes
-      server_port: 443
-      path: /dns-query
-      domain_resolver: CN-DNS-Tencent
-    - type: https
       tag: Global-DNS-Cloudflare-Gateway
       server: iloveyou.cloudflare-gateway.com
       server_port: 443
       path: /dns-query
+      detour: 节点选择
       domain_resolver: CN-DNS-Tencent
     - type: https
       tag: Global-DNS-Google
@@ -207,7 +202,7 @@ dns:
       client_subnet: 115.27.215.1/24
     - clash_mode: global
       action: route
-      server: Global-DNS-Recipes
+      server: Global-DNS-Google
       client_subnet: 115.27.215.1/24
     - rule_set: cn
       action: route
@@ -215,7 +210,7 @@ dns:
       client_subnet: 115.27.215.1/24
     - rule_set: proxy
       action: route
-      server: Global-DNS-Recipes
+      server: Global-DNS-Google
       client_subnet: 115.27.215.1/24
   final: Global-DNS-Cloudflare-Gateway
   strategy: prefer_ipv6
@@ -457,7 +452,6 @@ route:
         - pku7day.com
         - course.huh.moe
         - cn.bing.com
-        - v.recipes
         - h-e.top
         - pku.bohrium.com
         - cetaceang.qzz.io
