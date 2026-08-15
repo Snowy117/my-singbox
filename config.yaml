@@ -40,25 +40,26 @@ dns:
       server: v.recipes
       server_port: 443
       path: /dns-query
-      domain_resolver: CN-DNS-Ali
+      domain_resolver: CN-DNS-Tencent
     - type: https
       tag: Global-DNS-Cloudflare-Gateway
       server: iloveyou.cloudflare-gateway.com
       server_port: 443
       path: /dns-query
-      domain_resolver: CN-DNS-Ali
+      domain_resolver: CN-DNS-Tencent
     - type: https
       tag: Global-DNS-Google
       server: dns.google
       server_port: 443
       path: /dns-query
       detour: 节点选择
-      domain_resolver: CN-DNS-Ali
+      domain_resolver: CN-DNS-Tencent
     - type: fakeip
       tag: FakeIP-DNS
       inet4_range: 198.18.0.0/15
       inet6_range: fd18:1111:1111::/64
   rules:
+  #region hosts
     - domain: qmazon.local
       query_type: A
       action: predefined
@@ -131,15 +132,13 @@ dns:
       answer:
         - '*.cloudflare-gateway.com. IN AAAA 2606:4700:54::a29f:2407'
         - '*.cloudflare-gateway.com. IN AAAA 2606:4700:5c::a29f:2e07'
+  #endregion
     - domain_suffix:
         - pku.edu.cn
         - openjudge.cn
       action: route
       server: PKU-DNS
     - domain_suffix:
-        - edu.cn
-        - sukaka.ai6.me
-        - luogu.com.cn
         - qq.com
         - servicewechat.com
         - wechat.com
@@ -157,9 +156,6 @@ dns:
       action: predefined
       answer: []
     - domain_suffix:
-        - edu.cn
-        - sukaka.ai6.me
-        - luogu.com.cn
         - qq.com
         - servicewechat.com
         - wechat.com
@@ -169,8 +165,25 @@ dns:
         - qpic.cn
         - gtimg.cn
         - gtimg.com
+        - wxaurl.cn
+        - wxgateway.com
+        - wxlivecdn.com
+        - wxmpurl.cn
       action: route
-      server: CN-DNS-Ali
+      server: System-DNS
+    - domain_suffix:
+        - edu.cn
+        - sukaka.ai6.me
+        - luogu.com.cn
+      query_type: AAAA
+      action: predefined
+      answer: []
+    - domain_suffix:
+        - edu.cn
+        - sukaka.ai6.me
+        - luogu.com.cn
+      action: route
+      server: CN-DNS-Tencent
       client_subnet: 115.27.215.1/24
     - rule_set:
         - private
@@ -181,7 +194,7 @@ dns:
         - apple-cn
         - google-cn
       action: route
-      server: CN-DNS-Ali
+      server: CN-DNS-Tencent
       client_subnet: 115.27.215.1/24
     - query_type:
         - A
@@ -190,7 +203,7 @@ dns:
       server: FakeIP-DNS
     - clash_mode: direct
       action: route
-      server: CN-DNS-Ali
+      server: CN-DNS-Tencent
       client_subnet: 115.27.215.1/24
     - clash_mode: global
       action: route
@@ -198,7 +211,7 @@ dns:
       client_subnet: 115.27.215.1/24
     - rule_set: cn
       action: route
-      server: CN-DNS-Ali
+      server: CN-DNS-Tencent
       client_subnet: 115.27.215.1/24
     - rule_set: proxy
       action: route
@@ -417,17 +430,20 @@ outbounds:
 
 route:
   rules:
-    - inbound: 
+    - inbound:
         - tun-in
         - mixed-in-v4
         - mixed-in-v6
       action: sniff
+      
     - inbound:
         - dns-in-v4
         - dns-in-v6
       action: hijack-dns
+
     - protocol: dns
       action: hijack-dns
+
     - process_name:
         - WeChat.exe
         - WeChatAppEx.exe
@@ -435,6 +451,7 @@ route:
         - WeixinAppEx.exe
       action: route
       outbound: 全球直连
+      
     - domain_suffix:
         - sukaka.ai6.me
         - pku7day.com
