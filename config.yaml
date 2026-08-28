@@ -52,7 +52,7 @@ dns:
     - type: fakeip
       tag: FakeIP-DNS
       inet4_range: 198.18.0.0/15
-      inet6_range: fd18:1111:1111::/64
+      inet6_range: 2001:2::/64
   rules:
   #region hosts
     - domain: qmazon.local
@@ -202,7 +202,7 @@ dns:
       client_subnet: 115.27.215.1/24
     - clash_mode: global
       action: route
-      server: Global-DNS-Google
+      server: Global-DNS-Cloudflare-Gateway
       client_subnet: 115.27.215.1/24
     - rule_set: cn
       action: route
@@ -210,7 +210,7 @@ dns:
       client_subnet: 115.27.215.1/24
     - rule_set: proxy
       action: route
-      server: Global-DNS-Google
+      server: Global-DNS-Cloudflare-Gateway
       client_subnet: 115.27.215.1/24
   final: Global-DNS-Cloudflare-Gateway
   strategy: prefer_ipv6
@@ -218,27 +218,27 @@ dns:
   cache_capacity: 2048
 
 inbounds:
-  - type: tun
-    tag: tun-in
-    interface_name: Meta
-    mtu: 1480
-    address:
-      - 198.18.0.1/30
-      - fd18:1111:1111::1/126
-    dns_mode: hijack
-    dns_address:
-      - 198.18.0.2
-      - fd18:1111:1111::2
-    stack: mixed
-    auto_route: false
-    strict_route: false
-    include_interface:
-      - vEthernet (E1)
-      - 以太网
-      - WLAN
-    route_exclude_address:
-      - 127.0.0.0/8
-      - ::1/128
+  # - type: tun
+  #   tag: tun-in
+  #   interface_name: Meta
+  #   mtu: 1480
+  #   address:
+  #     - 198.18.0.1/30
+  #     - 2001:2::1/126
+  #   dns_mode: hijack
+  #   dns_address:
+  #     - 198.18.0.2
+  #     - 2001:2::2
+  #   stack: mixed
+  #   auto_route: false
+  #   strict_route: false
+  #   include_interface:
+  #     - vEthernet (E1)
+  #     - 以太网
+  #     - WLAN
+  #   route_exclude_address:
+  #     - 127.0.0.0/8
+  #     - ::1/128
   - type: mixed
     tag: mixed-in-v4
     listen: 0.0.0.0
@@ -471,6 +471,7 @@ route:
         - lyclaude.site
         - download-cdn.jetbrains.com
         - flypy.cc
+        - oaifree.com
       action: route
       outbound: 全球直连
     - domain:

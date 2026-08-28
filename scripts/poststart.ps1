@@ -1,3 +1,4 @@
+Exit-PSSession # 不再执行这个脚本
 $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
