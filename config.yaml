@@ -10,7 +10,7 @@ dns:
       tag: System-DNS
     - type: udp
       tag: PKU-DNS
-      server: 210.2.4.8
+      server: 101.226.4.6 # 360dns比较准
       server_port: 53
     - type: udp
       tag: CN-DNS-Bootstrap-114-A
@@ -133,39 +133,39 @@ dns:
         - openjudge.cn
       action: route
       server: PKU-DNS
-    - domain_suffix:
-        - qq.com
-        - servicewechat.com
-        - wechat.com
-        - weixin.com
-        - weixinbridge.com
-        - qlogo.cn
-        - qpic.cn
-        - gtimg.cn
-        - gtimg.com
-        - wxaurl.cn
-        - wxgateway.com
-        - wxlivecdn.com
-        - wxmpurl.cn
-      query_type: AAAA
-      action: predefined
-      answer: []
-    - domain_suffix:
-        - qq.com
-        - servicewechat.com
-        - wechat.com
-        - weixin.com
-        - weixinbridge.com
-        - qlogo.cn
-        - qpic.cn
-        - gtimg.cn
-        - gtimg.com
-        - wxaurl.cn
-        - wxgateway.com
-        - wxlivecdn.com
-        - wxmpurl.cn
-      action: route
-      server: System-DNS
+    # - domain_suffix:
+    #     - qq.com
+    #     - servicewechat.com
+    #     - wechat.com
+    #     - weixin.com
+    #     - weixinbridge.com
+    #     - qlogo.cn
+    #     - qpic.cn
+    #     - gtimg.cn
+    #     - gtimg.com
+    #     - wxaurl.cn
+    #     - wxgateway.com
+    #     - wxlivecdn.com
+    #     - wxmpurl.cn
+    #   query_type: AAAA
+    #   action: predefined
+    #   answer: []
+    # - domain_suffix:
+    #     - qq.com
+    #     - servicewechat.com
+    #     - wechat.com
+    #     - weixin.com
+    #     - weixinbridge.com
+    #     - qlogo.cn
+    #     - qpic.cn
+    #     - gtimg.cn
+    #     - gtimg.com
+    #     - wxaurl.cn
+    #     - wxgateway.com
+    #     - wxlivecdn.com
+    #     - wxmpurl.cn
+    #   action: route
+    #   server: System-DNS
     - domain_suffix:
         - edu.cn
         - sukaka.ai6.me
@@ -230,8 +230,8 @@ inbounds:
   #     - 198.18.0.2
   #     - 2001:2::2
   #   stack: mixed
-  #   auto_route: false
-  #   strict_route: false
+  #   auto_route: true
+  #   strict_route: true
   #   include_interface:
   #     - vEthernet (E1)
   #     - 以太网
@@ -241,18 +241,19 @@ inbounds:
   #     - ::1/128
   - type: mixed
     tag: mixed-in-v4
-    listen: 0.0.0.0
+    listen: 127.0.0.1
     listen_port: 30890
-    users:
-      - Username: __RUNTIME_MIXED_USERS__
-        Password: __RUNTIME_MIXED_USERS__
+    # users:
+    #   - Username: __RUNTIME_MIXED_USERS__
+    #     Password: __RUNTIME_MIXED_USERS__
+    set_system_proxy: true
   - type: mixed
     tag: mixed-in-v6
-    listen: '::'
+    listen: '::1'
     listen_port: 30890
-    users:
-      - Username: __RUNTIME_MIXED_USERS__
-        Password: __RUNTIME_MIXED_USERS__
+    # users:
+    #   - Username: __RUNTIME_MIXED_USERS__
+    #     Password: __RUNTIME_MIXED_USERS__
   - type: direct
     tag: dns-in-v4
     listen: 0.0.0.0
@@ -277,6 +278,7 @@ outbounds:
       - 全部节点
       - 自建/家宽节点
       - 故障转移
+      - 🟢 直连
     interrupt_exist_connections: true
   - type: selector
     tag: 🎓 北京大学
@@ -472,6 +474,7 @@ route:
         - download-cdn.jetbrains.com
         - flypy.cc
         - oaifree.com
+        - pinhaoke.love
       action: route
       outbound: 全球直连
     - domain:
