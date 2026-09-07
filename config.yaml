@@ -35,20 +35,25 @@ dns:
       server: dot.360.cn
       server_port: 853
       domain_resolver: CN-DNS-Bootstrap-114-B
+    - type: tls
+      tag: CN-DNS-One
+      server: dot-pure.onedns.net
+      server_port: 853
+      domain_resolver: CN-DNS-Bootstrap-114-B
     - type: https
       tag: Global-DNS-Cloudflare-Gateway
       server: iloveyou.cloudflare-gateway.com
       server_port: 443
       path: /dns-query
-      detour: 节点选择
-      domain_resolver: CN-DNS-Tencent
+      detour: DNS-出口
+      domain_resolver: CN-DNS-One
     - type: https
       tag: Global-DNS-Google
       server: dns.google
       server_port: 443
       path: /dns-query
-      detour: 节点选择
-      domain_resolver: CN-DNS-Tencent
+      detour: DNS-出口
+      domain_resolver: CN-DNS-One
     - type: fakeip
       tag: FakeIP-DNS
       inet4_range: 198.18.0.0/15
@@ -178,8 +183,20 @@ dns:
         - sukaka.ai6.me
         - luogu.com.cn
       action: route
-      server: CN-DNS-Tencent
-      client_subnet: 115.27.215.1/24
+      server: CN-DNS-One
+    - domain_suffix:
+        - xboxlive.com
+        - xbox.com
+        - playfabapi.com
+        - playfab.com
+        - mojang.com
+        - minecraftservices.com
+        - minecraft.net
+      query_type:
+        - A
+        - AAAA
+      action: route
+      server: FakeIP-DNS
     - rule_set:
         - private
         - fakeip-filter
@@ -189,8 +206,7 @@ dns:
         - apple-cn
         - google-cn
       action: route
-      server: CN-DNS-Tencent
-      client_subnet: 115.27.215.1/24
+      server: CN-DNS-One
     - query_type:
         - A
         - AAAA
@@ -198,20 +214,16 @@ dns:
       server: FakeIP-DNS
     - clash_mode: direct
       action: route
-      server: CN-DNS-Tencent
-      client_subnet: 115.27.215.1/24
+      server: CN-DNS-One
     - clash_mode: global
       action: route
       server: Global-DNS-Cloudflare-Gateway
-      client_subnet: 115.27.215.1/24
     - rule_set: cn
       action: route
-      server: CN-DNS-Tencent
-      client_subnet: 115.27.215.1/24
+      server: CN-DNS-One
     - rule_set: proxy
       action: route
       server: Global-DNS-Cloudflare-Gateway
-      client_subnet: 115.27.215.1/24
   final: Global-DNS-Cloudflare-Gateway
   strategy: prefer_ipv6
   reverse_mapping: true
@@ -280,6 +292,9 @@ outbounds:
       - 故障转移
       - 🟢 直连
     interrupt_exist_connections: true
+  - type: selector
+    tag: DNS-出口
+    outbounds: [香港自动, 新加坡自动, 日本自动, 美国节点, 节点选择, 🟢 直连]
   - type: selector
     tag: 🎓 北京大学
     outbounds:
@@ -502,6 +517,16 @@ route:
     - rule_set: networktest
       action: route
       outbound: 网络测试
+    - domain_suffix:
+        - xboxlive.com
+        - xbox.com
+        - playfabapi.com
+        - playfab.com
+        - mojang.com
+        - minecraftservices.com
+        - minecraft.net
+      action: route
+      outbound: 游戏平台
     - rule_set: games
       action: route
       outbound: 游戏平台
@@ -765,13 +790,13 @@ route:
   find_process: true
   auto_detect_interface: true
   default_domain_resolver:
-    server: CN-DNS-Bootstrap-114-A
+    server: CN-DNS-One
     strategy: prefer_ipv6
   default_http_client: rule-set-http
 
 http_clients:
   - tag: rule-set-http
-    detour: 节点选择
+    detour: DNS-出口
     domain_resolver:
       server: Global-DNS-Cloudflare-Gateway
       strategy: prefer_ipv6
