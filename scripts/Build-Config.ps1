@@ -148,6 +148,40 @@ if ($requiresRuntimeSecret -and
     ([string]::IsNullOrWhiteSpace([string]$runtime.clash_secret) -or $runtime.clash_secret -eq 'CHANGE_ME')) {
     throw 'Set clash_secret in local/runtime.json.'
 }
+
+# Derive a route resolve rule from DNS predefined rules so that domain-based
+# connections (e.g. arriving via the system proxy / mixed inbound) are resolved
+# through dns.rules (honoring predefined answers) instead of being resolved by
+# route.default_domain_resolver, which bypasses dns.rules entirely.
+$resolveDomains = [Collections.Generic.List[string]]::new()
+$resolveSuffixes = [Collections.Generic.List[string]]::new()
+foreach ($dnsRule in @($config.dns.rules | Where-Object { [string]$_.action -eq 'predefined' })) {
+    foreach ($domain in @($dnsRule.domain)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$domain)) { $resolveDomains.Add([string]$domain) }
+    }
+    foreach ($suffix in @($dnsRule.domain_suffix)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$suffix)) { $resolveSuffixes.Add([string]$suffix) }
+    }
+}
+$resolveDomains = @(Get-UniqueStrings $resolveDomains)
+$resolveSuffixes = @(Get-UniqueStrings $resolveSuffixes)
+if ($resolveDomains.Count -or $resolveSuffixes.Count) {
+    $resolveRule = [pscustomobject]@{ action = 'resolve' }
+    if ($resolveDomains.Count) { $resolveRule | Add-Member -NotePropertyName domain -NotePropertyValue $resolveDomains }
+    if ($resolveSuffixes.Count) { $resolveRule | Add-Member -NotePropertyName domain_suffix -NotePropertyValue $resolveSuffixes }
+    $routeRules = @($config.route.rules)
+    $insertIndex = 0
+    for ($index = 0; $index -lt $routeRules.Count; $index++) {
+        if (@('sniff', 'hijack-dns') -contains [string]$routeRules[$index].action) {
+            $insertIndex = $index + 1
+        }
+    }
+    $beforeRules = if ($insertIndex -gt 0) { $routeRules[0..($insertIndex - 1)] } else { @() }
+    $afterRules = if ($insertIndex -lt $routeRules.Count) { $routeRules[$insertIndex..($routeRules.Count - 1)] } else { @() }
+    $config.route.rules = @($beforeRules) + @($resolveRule) + @($afterRules)
+    Write-Host "Added route resolve rule derived from DNS predefined rules: $(($resolveDomains + $resolveSuffixes) -join ', ')"
+}
+
 Assert-UniqueTags @($config.outbounds) 'outbound'
 Assert-UniqueTags @($config.endpoints) 'endpoint'
 Assert-UniqueTags (@($config.outbounds) + @($config.endpoints)) 'outbound/endpoint'
